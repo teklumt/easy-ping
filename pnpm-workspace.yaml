@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+  - "examples/*"
+allowBuilds:
+  esbuild: true
+  # Next's optional image optimiser. The example is typechecked, never run,
+  # so its native binary is dead weight.
+  sharp: false

@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: easynotify
+      POSTGRES_PASSWORD: easynotify
+      POSTGRES_DB: easynotify_test
+    ports:
+      - "54329:5432"
+    # Test data is disposable; keeping it off disk makes the suite noticeably faster.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easynotify -d easynotify_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
