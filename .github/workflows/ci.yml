@@ -9,6 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # pnpm 11 requires >= 22.13 (it loads node:sqlite). This is the toolchain
+  # version, not the runtime floor the library supports — see runtime-floor.
+  NODE_VERSION: 22
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -35,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -45,3 +50,34 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm type-budget
+
+  runtime-floor:
+    # Guards `engines.node`. The suite runs on the toolchain version, so
+    # without this the lowest supported runtime is never actually exercised —
+    # which is how the package came to claim Node 18 support it did not have.
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node: [20, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      # Install and build on the toolchain version; pnpm cannot run on 20.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # Then drop to the target runtime and exercise the built bundles.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: node packages/easy-notify/scripts/check-node-floor.mjs

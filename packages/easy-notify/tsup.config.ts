@@ -5,7 +5,7 @@ import { defineConfig } from "tsup";
 // deletes it (react.d.ts vanished exactly this way).
 const shared = {
   format: ["esm", "cjs"] as const,
-  target: "node18" as const,
+  target: "node20" as const,
   dts: true,
   treeshake: true,
   sourcemap: true,

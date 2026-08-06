@@ -83,7 +83,8 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "type-budget": "node scripts/check-type-budget.mjs"
+    "type-budget": "node scripts/check-type-budget.mjs",
+    "check-node-floor": "node scripts/check-node-floor.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
@@ -96,7 +97,7 @@
     "vitest": "^2.1.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0"
