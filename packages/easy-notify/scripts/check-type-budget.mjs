@@ -19,7 +19,10 @@ const GATES = [
     project: "tsconfig.core.json",
     ceiling: Number(process.env.TYPE_BUDGET_CORE ?? 8_000),
   },
-  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 32_000) },
+  // Raised from 32k when the plugin store landed (30.2k). Dominated by
+  // Drizzle's pgTable inference, so it moves with surface area rather than
+  // with the plugin-type risk that `core` actually guards.
+  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 38_000) },
 ];
 
 let failed = false;

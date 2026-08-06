@@ -175,6 +175,18 @@ process.on("SIGTERM", () => worker.stop()); // drains in-flight work, releases l
 
 ---
 
+## Channels
+
+| channel | state |
+| --- | --- |
+| `inApp` | ✅ built in, on by default, needs no provider |
+| `email` | ✅ Resend provider; the interface is open for others |
+| `push` | ⬜ not implemented |
+| `sms` | ⬜ not implemented |
+| `slack` | ⬜ not implemented |
+
+The unimplemented ones exist in the `Channel` union so plugins can add them later. Declaring one today **warns at startup** and reports `skipped: "channel-unavailable"` — deliberately distinct from `"no-channels"`, so a missing provider never looks like a user opt-out.
+
 ## Security notes
 
 - **`session.getUserId` is mandatory.** There is no default and no dev bypass — an insecure default ships, a startup crash doesn't. Returning `null` yields 401; *throwing* yields 500, because a broken session store and an absent session are different bugs.

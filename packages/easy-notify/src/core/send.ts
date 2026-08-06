@@ -180,9 +180,17 @@ export async function runSend(
   const rows: InsertNotification[] = [];
   const actorId = input.actorId ?? null;
 
-  const requested = (input.overrides?.channels ?? definition.channels).filter((channel) =>
-    isChannelUsable(channel, deps.channels),
-  );
+  const declared = input.overrides?.channels ?? definition.channels;
+  const requested = declared.filter((channel) => isChannelUsable(channel, deps.channels));
+
+  // Distinguished from "no-channels" so a missing provider does not look
+  // identical to a user having opted out of everything.
+  if (declared.length > 0 && requested.length === 0) {
+    return {
+      notifications: [],
+      skipped: userIds.map((userId) => ({ userId, reason: "channel-unavailable" as const })),
+    };
+  }
 
   const prepared = await runPrepare(deps.plugins, { type, recipients }, deps.logger);
 

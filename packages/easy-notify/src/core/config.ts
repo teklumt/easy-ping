@@ -45,6 +45,8 @@ export type EasyNotifyConfig<TDefs extends NotificationDefinitions> = {
   plugins?: readonly AnyPlugin[];
   /** Where the handler is mounted, used to strip the prefix off incoming URLs. */
   basePath?: string;
+  /** Table-name prefix; must match the one given to the adapter. */
+  tablePrefix?: string;
   logger?: Logger;
 };
 

@@ -1,3 +1,4 @@
+import type { QueryOptions, WhereClause } from "./store";
 import type { Channel, DeliveryRecord, Frequency, NotificationRecord } from "./types";
 
 export type PreferenceRecord = {
@@ -98,8 +99,21 @@ export type DatabaseAdapter = {
 
   getFailedDeliveries(args: { since: Date; limit: number }): Promise<readonly DeliveryRecord[]>;
 
-  // On the core adapter because plan §6 reserves the table. Plugins can declare
-  // tables via schema() but cannot query them yet — digests will need that.
-  listPreferences(userIds: readonly string[]): Promise<readonly PreferenceRecord[]>;
-  upsertPreferences(rows: readonly PreferenceRecord[]): Promise<void>;
+  /**
+   * Generic table access for plugin-declared tables. Reached only through a
+   * PluginStore, which validates the table and every column against the
+   * plugin's own schema() before anything gets here.
+   */
+  queryTable(
+    table: string,
+    where: WhereClause,
+    options: QueryOptions,
+  ): Promise<Record<string, unknown>[]>;
+  insertRows(
+    table: string,
+    rows: readonly Record<string, unknown>[],
+    onConflict?: readonly string[],
+  ): Promise<number>;
+  updateRows(table: string, where: WhereClause, set: Record<string, unknown>): Promise<number>;
+  deleteRows(table: string, where: WhereClause): Promise<number>;
 };

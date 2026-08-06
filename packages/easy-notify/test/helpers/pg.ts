@@ -2,6 +2,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { drizzleAdapter } from "../../src/adapters/drizzle/adapter";
 import type { DatabaseAdapter } from "../../src/core/adapter";
+import type { SchemaDeclaration } from "../../src/core/plugin";
+import { createPluginStore, type PluginStore } from "../../src/core/store";
 import { coreSchema } from "../../src/schema/declaration";
 import { renderPostgresDdl } from "../../src/schema/render-sql";
 
@@ -46,9 +48,25 @@ export async function postgresReachable(): Promise<boolean> {
 export type TestDatabase = {
   client: ReturnType<typeof postgres>;
   adapter: DatabaseAdapter;
+  /** Same store the preferences plugin gets, for seeding and assertions. */
+  preferences: PluginStore;
   truncate: () => Promise<void>;
   end: () => Promise<void>;
 };
+
+const PREFERENCE_SCHEMA = {
+  notificationPreference: {
+    tableName: "notification_preference",
+    fields: {
+      userId: { type: "string", required: true },
+      type: { type: "string", required: true },
+      channel: { type: "string", required: true },
+      enabled: { type: "boolean", required: true },
+      frequency: { type: "string", required: true },
+    },
+    primaryKey: ["userId", "type", "channel"],
+  },
+} satisfies SchemaDeclaration;
 
 /**
  * One Postgres schema per test file.
@@ -75,9 +93,12 @@ export async function createTestDatabase(namespace: string): Promise<TestDatabas
     await client.unsafe(statement);
   }
 
+  const adapter = drizzleAdapter(drizzle(client));
+
   return {
     client,
-    adapter: drizzleAdapter(drizzle(client)),
+    adapter,
+    preferences: createPluginStore("test", PREFERENCE_SCHEMA, adapter, ""),
     truncate: async () => {
       await client.unsafe(
         `TRUNCATE ${schema}.notification_delivery, ${schema}.notification, ${schema}.notification_preference RESTART IDENTITY CASCADE`,

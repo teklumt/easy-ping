@@ -52,7 +52,7 @@ function build() {
     channels: { inApp: { enabled: true } },
     delivery: { mode: "cron" },
     logger: silent,
-    plugins: [preferences({ database: db.adapter, secret: SECRET })],
+    plugins: [preferences()],
   });
 }
 

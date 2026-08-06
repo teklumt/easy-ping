@@ -98,8 +98,10 @@ describe("BUG F: a provider timeout must abort the in-flight request", () => {
         markRead: async () => 0,
         markAllRead: async () => 0,
         getFailedDeliveries: async () => [],
-        listPreferences: async () => [],
-        upsertPreferences: async () => {},
+        queryTable: async () => [],
+        insertRows: async () => 0,
+        updateRows: async () => 0,
+        deleteRows: async () => 0,
       },
       definitions: {
         t: { channels: ["email"], email: { subject: () => "s", template: () => "h" } },

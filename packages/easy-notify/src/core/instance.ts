@@ -5,7 +5,8 @@ import { ConfigError, consoleLogger } from "./errors";
 import { createHandler } from "./handler";
 import type { AnyPlugin } from "./plugin";
 import { createRunner } from "./runner";
-import { runSend } from "./send";
+import { isChannelUsable, runSend } from "./send";
+import { createPluginStore } from "./store";
 import type { DeliveryMode } from "./types";
 
 const DEFAULTS = {
@@ -91,6 +92,7 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
   validate(config as EasyNotifyConfig<NotificationDefinitions>, plugins);
 
   const logger = config.logger ?? consoleLogger;
+  const tablePrefix = config.tablePrefix ?? "";
   const mode = config.delivery?.mode ?? DEFAULTS.mode;
   const leaseMs = config.delivery?.leaseMs ?? DEFAULTS.leaseMs;
   const warnings: string[] = [];
@@ -102,6 +104,25 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
     warnings.push(
       `email provider timeout (${providerTimeout}ms) is at least half of delivery.leaseMs ` +
         `(${leaseMs}ms); raise leaseMs or duplicate sends become systematic.`,
+    );
+  }
+
+  // Declaring `channels: ["push"]` used to do nothing at all: no warning, and
+  // a skip reason indistinguishable from the user having opted out.
+  const unusable = new Map<string, string[]>();
+  for (const [type, definition] of Object.entries(config.notifications)) {
+    const missing = definition.channels.filter(
+      (channel) => !isChannelUsable(channel, config.channels),
+    );
+    if (missing.length > 0) unusable.set(type, [...missing]);
+  }
+
+  for (const [type, channels] of unusable) {
+    const dead = channels.length === config.notifications[type]?.channels.length;
+    warnings.push(
+      `notification "${type}" declares ${channels.map((c) => `"${c}"`).join(", ")} ` +
+        `but no provider is configured for ${channels.length > 1 ? "them" : "it"}` +
+        (dead ? " — this type can never be delivered." : "; those channels will be skipped."),
     );
   }
 
@@ -125,6 +146,15 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
     batchSize: config.delivery?.batchSize ?? DEFAULTS.batchSize,
     backoff: (config.delivery?.backoff ?? "exponential") as Backoff,
   });
+
+  // Before any hook or route can run.
+  for (const plugin of plugins) {
+    plugin.init?.({
+      store: createPluginStore(plugin.id, plugin.schema, config.database, tablePrefix),
+      secret: config.secret,
+      logger,
+    });
+  }
 
   const pluginRoutes = plugins.flatMap((plugin) => plugin.routes ?? []);
 
