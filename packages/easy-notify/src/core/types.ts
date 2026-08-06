@@ -6,7 +6,12 @@ export type DeliveryMode = "inline" | "deferred" | "worker" | "cron";
 
 export type Frequency = "instant" | "daily" | "weekly" | "off";
 
-export type SkipReason = "deduped" | "no-channels" | "no-recipient";
+export type SkipReason =
+  | "deduped"
+  | "no-channels"
+  | "no-recipient"
+  /** Every declared channel lacks a provider — a misconfiguration, not a preference. */
+  | "channel-unavailable";
 
 export type Recipient = {
   userId: string;

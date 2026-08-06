@@ -1,4 +1,6 @@
 import type { DeliveryOutcome } from "./adapter";
+import type { Logger } from "./errors";
+import type { PluginStore } from "./store";
 import type { Channel, Recipient } from "./types";
 
 export type Promisable<T> = T | Promise<T>;
@@ -104,6 +106,15 @@ export type RouteDefinition = {
   handler: (ctx: RouteContext) => Promise<Response>;
 };
 
+/** Handed to a plugin at startup so it need not be given the database twice. */
+export type PluginInitContext = {
+  /** Scoped to the tables this plugin declares in schema(). */
+  store: PluginStore;
+  /** The top-level signing secret, for plugins issuing signed links. */
+  secret: string;
+  logger: Logger;
+};
+
 export type EasyNotifyPlugin<
   TId extends string = string,
   TSchema extends SchemaDeclaration = SchemaDeclaration,
@@ -113,6 +124,8 @@ export type EasyNotifyPlugin<
   schema?: TSchema;
   routes?: readonly RouteDefinition[];
   hooks?: PluginHooks;
+  /** Called once by easyNotify() before any hook or route can run. */
+  init?: (ctx: PluginInitContext) => void;
 };
 
 export type AnyPlugin = EasyNotifyPlugin<string, SchemaDeclaration>;

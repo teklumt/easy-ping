@@ -1,7 +1,7 @@
-import type { DatabaseAdapter, PreferenceRecord } from "../../core/adapter";
 import type {
   ChannelDecision,
   EasyNotifyPlugin,
+  PluginInitContext,
   PrepareContext,
   ResolveChannelsContext,
 } from "../../core/plugin";
@@ -10,10 +10,17 @@ import type { Channel, Frequency } from "../../core/types";
 
 export const UNSUBSCRIBE_PURPOSE = "unsubscribe";
 
+const TABLE = "notification_preference";
+
+export type PreferenceRow = {
+  userId: string;
+  type: string;
+  channel: Channel;
+  enabled: boolean;
+  frequency: Frequency;
+};
+
 export type PreferencesOptions = {
-  database: DatabaseAdapter;
-  /** Signs unsubscribe links. Use the same value as the top-level config. */
-  secret: string;
   /** What an absent row means. Flip to false for opt-in-only notifications. */
   defaultEnabled?: boolean;
   /** Types that ignore preferences entirely: receipts, security alerts. */
@@ -23,7 +30,7 @@ export type PreferencesOptions = {
 
 const key = (userId: string, type: string, channel: string) => `${userId} ${type} ${channel}`;
 
-type PreparedPreferences = Map<string, PreferenceRecord>;
+type PreparedPreferences = Map<string, PreferenceRow>;
 
 export function buildUnsubscribeToken(
   secret: string,
@@ -40,21 +47,34 @@ export function buildUnsubscribeToken(
   });
 }
 
-export function preferences(options: PreferencesOptions): EasyNotifyPlugin<"preferences"> {
+export function preferences(options: PreferencesOptions = {}): EasyNotifyPlugin<"preferences"> {
   const defaultEnabled = options.defaultEnabled ?? true;
   const alwaysSend = new Set(options.alwaysSend ?? []);
+
+  // Assigned by init(), which easyNotify() runs before any hook or route.
+  let ctx: PluginInitContext;
 
   const isAllowed = (userId: string, type: string, channel: Channel, rows: PreparedPreferences) => {
     const row = rows.get(key(userId, type, channel));
     return row ? row.enabled && row.frequency !== "off" : defaultEnabled;
   };
 
+  const load = (userIds: readonly string[]) =>
+    ctx.store.find<PreferenceRow>(TABLE, { userId: { in: [...userIds] } });
+
+  const save = (row: PreferenceRow) =>
+    ctx.store.upsert(TABLE, [row], { onConflict: ["userId", "type", "channel"] });
+
   return {
     id: "preferences",
 
+    init: (context) => {
+      ctx = context;
+    },
+
     schema: {
       notificationPreference: {
-        tableName: "notification_preference",
+        tableName: TABLE,
         fields: {
           userId: { type: "string", required: true },
           type: { type: "string", required: true },
@@ -68,30 +88,27 @@ export function preferences(options: PreferencesOptions): EasyNotifyPlugin<"pref
 
     hooks: {
       /** One query per send; doing this per recipient would be an N+1. */
-      prepare: async (ctx: PrepareContext): Promise<PreparedPreferences> => {
-        if (alwaysSend.has(ctx.type)) return new Map();
+      prepare: async (context: PrepareContext): Promise<PreparedPreferences> => {
+        if (alwaysSend.has(context.type)) return new Map();
 
-        const rows = await options.database.listPreferences(
-          ctx.recipients.map((recipient) => recipient.userId),
-        );
-
+        const rows = await load(context.recipients.map((recipient) => recipient.userId));
         return new Map(rows.map((row) => [key(row.userId, row.type, row.channel), row]));
       },
 
-      resolveChannels: (ctx: ResolveChannelsContext) => {
-        if (alwaysSend.has(ctx.type)) return ctx.decisions;
+      resolveChannels: (context: ResolveChannelsContext) => {
+        if (alwaysSend.has(context.type)) return context.decisions;
 
         // prepare() failing leaves this undefined. Fail closed rather than
         // assuming everyone opted in: that is exactly how people who
-        // unsubscribed get emailed anyway. RFC 0004 section 5.
-        if (!(ctx.prepared instanceof Map)) {
-          return ctx.decisions.map((decision) => ({ ...decision, action: "skip" as const }));
+        // unsubscribed get emailed anyway.
+        if (!(context.prepared instanceof Map)) {
+          return context.decisions.map((decision) => ({ ...decision, action: "skip" as const }));
         }
 
-        const rows = ctx.prepared as PreparedPreferences;
+        const rows = context.prepared as PreparedPreferences;
 
-        return ctx.decisions.map<ChannelDecision>((decision) =>
-          isAllowed(ctx.recipient.userId, ctx.type, decision.channel, rows)
+        return context.decisions.map<ChannelDecision>((decision) =>
+          isAllowed(context.recipient.userId, context.type, decision.channel, rows)
             ? decision
             : { ...decision, action: "skip" },
         );
@@ -104,7 +121,7 @@ export function preferences(options: PreferencesOptions): EasyNotifyPlugin<"pref
         method: "GET",
         scope: { type: "user" },
         handler: async ({ userId }) => {
-          const rows = await options.database.listPreferences([userId ?? ""]);
+          const rows = await load([userId ?? ""]);
           return Response.json({ preferences: rows, defaultEnabled });
         },
       },
@@ -114,27 +131,20 @@ export function preferences(options: PreferencesOptions): EasyNotifyPlugin<"pref
         method: "POST",
         scope: { type: "user" },
         handler: async ({ request, userId }) => {
-          const body = (await request.json().catch(() => null)) as {
-            type?: string;
-            channel?: Channel;
-            enabled?: boolean;
-            frequency?: Frequency;
-          } | null;
+          const body = (await request.json().catch(() => null)) as Partial<PreferenceRow> | null;
 
           if (!body?.type || !body.channel) {
             return Response.json({ error: "type and channel are required" }, { status: 400 });
           }
 
           // userId comes from the resolved session, never from the body.
-          await options.database.upsertPreferences([
-            {
-              userId: userId ?? "",
-              type: body.type,
-              channel: body.channel,
-              enabled: body.enabled ?? true,
-              frequency: body.frequency ?? "instant",
-            },
-          ]);
+          await save({
+            userId: userId ?? "",
+            type: body.type,
+            channel: body.channel,
+            enabled: body.enabled ?? true,
+            frequency: body.frequency ?? "instant",
+          });
 
           return Response.json({ ok: true });
         },
@@ -142,22 +152,24 @@ export function preferences(options: PreferencesOptions): EasyNotifyPlugin<"pref
 
       {
         // Reached from a mail client with no session, so it is authenticated
-        // by the signature on the link itself. RFC 0002 section 5.
+        // by the signature on the link itself.
         path: "/unsubscribe",
         method: "POST",
         scope: { type: "signed", purpose: UNSUBSCRIBE_PURPOSE },
         handler: async ({ claims }) => {
-          // The router verified signature, purpose and expiry before dispatch,
-          // so this handler is unreachable without valid claims.
           const type = claims?.data?.type;
           const channel = claims?.data?.channel as Channel | undefined;
           if (!claims || !type || !channel) {
             return Response.json({ error: "invalid token" }, { status: 400 });
           }
 
-          await options.database.upsertPreferences([
-            { userId: claims.uid, type, channel, enabled: false, frequency: "off" },
-          ]);
+          await save({
+            userId: claims.uid,
+            type,
+            channel,
+            enabled: false,
+            frequency: "off",
+          });
 
           // Gmail and Yahoo one-click requires the POST itself to unsubscribe,
           // with no confirmation page.

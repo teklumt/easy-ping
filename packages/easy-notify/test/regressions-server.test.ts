@@ -135,6 +135,49 @@ describe.skipIf(!available)("suspected defects", () => {
     expect(seenToken).toBeTruthy();
   });
 
+  describe("BUG I: an unimplemented channel must not fail silently", () => {
+    const withChannels = (channels: readonly ("inApp" | "email" | "push")[], warnings: string[]) =>
+      easyNotify({
+        database: db.adapter,
+        secret: "s",
+        cron: { secret: "c" },
+        session: { getUserId: async () => "u1" },
+        getRecipients: async (ids) => ids.map(recipient),
+        notifications: { thing: { channels } },
+        channels: { inApp: { enabled: true } },
+        delivery: { mode: "cron" },
+        logger: { warn: (m) => void warnings.push(m), error: () => {} },
+      });
+
+    it("warns at startup that a push-only type can never be delivered", () => {
+      const warnings: string[] = [];
+      withChannels(["push"], warnings);
+
+      expect(warnings.some((w) => w.includes("can never be delivered"))).toBe(true);
+    });
+
+    it("warns that an unusable channel is skipped when others remain", () => {
+      const warnings: string[] = [];
+      withChannels(["push", "inApp"], warnings);
+
+      expect(warnings.some((w) => w.includes("will be skipped"))).toBe(true);
+      expect(warnings.some((w) => w.includes("can never be delivered"))).toBe(false);
+    });
+
+    it("reports channel-unavailable, not no-channels, so it is distinguishable from an opt-out", async () => {
+      const result = await withChannels(["push"], []).send("thing", { to: "u1", payload: {} });
+
+      expect(result.skipped).toEqual([{ userId: "u1", reason: "channel-unavailable" }]);
+    });
+
+    it("stays silent when every declared channel has a provider", () => {
+      const warnings: string[] = [];
+      withChannels(["inApp"], warnings);
+
+      expect(warnings).toEqual([]);
+    });
+  });
+
   it("BUG H: markSeen does not clear notifications that arrived after the last poll", async () => {
     const notify = build("cron");
     await notify.send("ping", { to: "u1", payload: {} });

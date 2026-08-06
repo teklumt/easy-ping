@@ -7,16 +7,11 @@ import type {
   FeedPage,
   FeedQuery,
   InsertNotification,
-  PreferenceRecord,
 } from "../../core/adapter";
 import { decodeBase64Url, encodeBase64Url } from "../../core/base64url";
-import type {
-  Channel,
-  DeliveryRecord,
-  DeliveryStatus,
-  Frequency,
-  NotificationRecord,
-} from "../../core/types";
+import { isOperator, type QueryOptions, type WhereClause } from "../../core/store";
+import type { Channel, DeliveryRecord, DeliveryStatus, NotificationRecord } from "../../core/types";
+import { toSnakeCase } from "../../schema/declaration";
 
 type Row = Record<string, unknown>;
 
@@ -103,6 +98,48 @@ function toDelivery(row: Row): DeliveryRecord {
   };
 }
 
+/** Dates bind as ISO strings; see the note on `ts` above. */
+const bind = (value: unknown): unknown => (value instanceof Date ? value.toISOString() : value);
+
+/**
+ * Identifiers here are already validated by the PluginStore against the
+ * plugin's own schema, and still go through sql.identifier rather than
+ * interpolation. Values are always bound.
+ */
+function whereSql(where: WhereClause): SQL {
+  const entries = Object.entries(where);
+  if (entries.length === 0) return sql``;
+
+  const conditions = entries.map(([field, condition]) => {
+    const column = sql.identifier(toSnakeCase(field));
+
+    if (condition === null) return sql`${column} IS NULL`;
+    if (!isOperator(condition)) return sql`${column} = ${bind(condition)}`;
+
+    const operator = condition as Record<string, unknown>;
+    if ("in" in operator) {
+      const list = operator.in as readonly (string | number)[];
+      if (list.length === 0) return sql`FALSE`;
+      return sql`${column} IN (${sql.join(
+        list.map((item) => sql`${item}`),
+        sql`, `,
+      )})`;
+    }
+    if ("lt" in operator) return sql`${column} < ${bind(operator.lt)}`;
+    if ("lte" in operator) return sql`${column} <= ${bind(operator.lte)}`;
+    if ("gt" in operator) return sql`${column} > ${bind(operator.gt)}`;
+    if ("gte" in operator) return sql`${column} >= ${bind(operator.gte)}`;
+    if ("not" in operator) {
+      return operator.not === null
+        ? sql`${column} IS NOT NULL`
+        : sql`${column} IS DISTINCT FROM ${bind(operator.not)}`;
+    }
+    return sql`TRUE`;
+  });
+
+  return sql` WHERE ${sql.join(conditions, sql` AND `)}`;
+}
+
 export function drizzleAdapter(
   client: unknown,
   options: DrizzleAdapterOptions = {},
@@ -112,7 +149,6 @@ export function drizzleAdapter(
 
   const NOTIFICATION = sql.identifier(`${prefix}notification`);
   const DELIVERY = sql.identifier(`${prefix}notification_delivery`);
-  const PREFERENCE = sql.identifier(`${prefix}notification_preference`);
 
   const run = async (query: SQL, on: ExecutableDb = db) => toRows(await on.execute(query));
 
@@ -350,6 +386,89 @@ export function drizzleAdapter(
       return rows.length;
     },
 
+    async queryTable(table: string, where: WhereClause, options: QueryOptions) {
+      const order = options.orderBy
+        ? sql` ORDER BY ${sql.identifier(toSnakeCase(options.orderBy.field))} ${
+            options.orderBy.direction === "desc" ? sql`DESC` : sql`ASC`
+          }`
+        : sql``;
+      const limit = options.limit ? sql` LIMIT ${options.limit}` : sql``;
+
+      return run(
+        sql`SELECT * FROM ${sql.identifier(table)}${whereSql(where)}${order}${limit}`,
+      ) as Promise<Record<string, unknown>[]>;
+    },
+
+    async insertRows(
+      table: string,
+      rows: readonly Record<string, unknown>[],
+      onConflict?: readonly string[],
+    ) {
+      if (rows.length === 0) return 0;
+
+      // Column order is taken from the first row and every row is projected
+      // onto it, so a ragged batch cannot shift values into other columns.
+      const columns = Object.keys(rows[0] ?? {});
+      if (columns.length === 0) return 0;
+
+      const values = rows.map(
+        (row) =>
+          sql`(${sql.join(
+            columns.map((column) => sql`${bind(row[column])}`),
+            sql`, `,
+          )})`,
+      );
+
+      const conflict =
+        onConflict && onConflict.length > 0
+          ? sql` ON CONFLICT (${sql.join(
+              onConflict.map((field) => sql.identifier(toSnakeCase(field))),
+              sql`, `,
+            )}) DO UPDATE SET ${sql.join(
+              columns
+                .filter((column) => !onConflict.includes(column))
+                .map(
+                  (column) =>
+                    sql`${sql.identifier(toSnakeCase(column))} = EXCLUDED.${sql.identifier(
+                      toSnakeCase(column),
+                    )}`,
+                ),
+              sql`, `,
+            )}`
+          : sql``;
+
+      const inserted = await run(sql`
+        INSERT INTO ${sql.identifier(table)} (${sql.join(
+          columns.map((column) => sql.identifier(toSnakeCase(column))),
+          sql`, `,
+        )})
+        VALUES ${sql.join(values, sql`, `)}${conflict}
+        RETURNING 1 AS ok
+      `);
+      return inserted.length;
+    },
+
+    async updateRows(table: string, where: WhereClause, set: Record<string, unknown>) {
+      const assignments = Object.entries(set).map(
+        ([field, value]) => sql`${sql.identifier(toSnakeCase(field))} = ${bind(value)}`,
+      );
+      if (assignments.length === 0) return 0;
+
+      const rows = await run(sql`
+        UPDATE ${sql.identifier(table)}
+        SET ${sql.join(assignments, sql`, `)}${whereSql(where)}
+        RETURNING 1 AS ok
+      `);
+      return rows.length;
+    },
+
+    async deleteRows(table: string, where: WhereClause) {
+      const rows = await run(
+        sql`DELETE FROM ${sql.identifier(table)}${whereSql(where)} RETURNING 1 AS ok`,
+      );
+      return rows.length;
+    },
+
     async getFailedDeliveries(args: { since: Date; limit: number }) {
       const rows = await run(sql`
         SELECT * FROM ${DELIVERY}
@@ -358,47 +477,6 @@ export function drizzleAdapter(
         LIMIT ${args.limit}
       `);
       return rows.map(toDelivery);
-    },
-
-    async listPreferences(userIds: readonly string[]) {
-      if (userIds.length === 0) return [];
-
-      const rows = await run(sql`
-        SELECT * FROM ${PREFERENCE}
-        WHERE user_id IN (${sql.join(
-          userIds.map((id) => sql`${id}`),
-          sql`, `,
-        )})
-      `);
-
-      return rows.map((row) => ({
-        userId: str(row.user_id),
-        type: str(row.type),
-        channel: str(row.channel) as Channel,
-        enabled: Boolean(row.enabled),
-        frequency: str(row.frequency) as Frequency,
-      }));
-    },
-
-    async upsertPreferences(rows: readonly PreferenceRecord[]) {
-      if (rows.length === 0) return;
-
-      const values = rows.map(
-        (row) => sql`(
-          ${row.userId}::text,
-          ${row.type}::text,
-          ${row.channel}::text,
-          ${row.enabled}::boolean,
-          ${row.frequency}::text
-        )`,
-      );
-
-      await db.execute(sql`
-        INSERT INTO ${PREFERENCE} (user_id, type, channel, enabled, frequency)
-        VALUES ${sql.join(values, sql`, `)}
-        ON CONFLICT (user_id, type, channel)
-        DO UPDATE SET enabled = EXCLUDED.enabled, frequency = EXCLUDED.frequency
-      `);
     },
   };
 }

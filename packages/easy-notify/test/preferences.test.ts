@@ -47,7 +47,7 @@ function build(pluginOptions: Partial<Parameters<typeof preferences>[0]> = {}, u
     },
     delivery: { mode: "cron" },
     logger: silent,
-    plugins: [preferences({ database: db.adapter, secret: SECRET, ...pluginOptions })],
+    plugins: [preferences(pluginOptions)],
   });
 }
 
@@ -127,18 +127,22 @@ describe.skipIf(!available)("preferences plugin", () => {
   });
 
   it("skips a channel the user disabled", async () => {
-    await db.adapter.upsertPreferences([
-      { userId: "u1", type: "commentReply", channel: "email", enabled: false, frequency: "off" },
-    ]);
+    await db.preferences.upsert(
+      "notification_preference",
+      [{ userId: "u1", type: "commentReply", channel: "email", enabled: false, frequency: "off" }],
+      { onConflict: ["userId", "type", "channel"] },
+    );
 
     const result = await build().send("commentReply", { to: "u1", payload: {} });
     expect(result.notifications[0]?.deliveries.map((d) => d.channel)).toEqual(["inApp"]);
   });
 
   it("treats frequency off as disabled even when enabled is true", async () => {
-    await db.adapter.upsertPreferences([
-      { userId: "u1", type: "commentReply", channel: "email", enabled: true, frequency: "off" },
-    ]);
+    await db.preferences.upsert(
+      "notification_preference",
+      [{ userId: "u1", type: "commentReply", channel: "email", enabled: true, frequency: "off" }],
+      { onConflict: ["userId", "type", "channel"] },
+    );
 
     const result = await build().send("commentReply", { to: "u1", payload: {} });
     expect(result.notifications[0]?.deliveries.map((d) => d.channel)).toEqual(["inApp"]);
@@ -154,9 +158,11 @@ describe.skipIf(!available)("preferences plugin", () => {
   });
 
   it("ignores preferences for alwaysSend types", async () => {
-    await db.adapter.upsertPreferences([
-      { userId: "u1", type: "securityAlert", channel: "email", enabled: false, frequency: "off" },
-    ]);
+    await db.preferences.upsert(
+      "notification_preference",
+      [{ userId: "u1", type: "securityAlert", channel: "email", enabled: false, frequency: "off" }],
+      { onConflict: ["userId", "type", "channel"] },
+    );
 
     const result = await build({ alwaysSend: ["securityAlert"] }).send("securityAlert", {
       to: "u1",
@@ -172,14 +178,14 @@ describe.skipIf(!available)("preferences plugin", () => {
     let calls = 0;
     const counting = {
       ...db.adapter,
-      listPreferences: async (ids: readonly string[]) => {
+      queryTable: async (...args: Parameters<typeof db.adapter.queryTable>) => {
         calls += 1;
-        return db.adapter.listPreferences(ids);
+        return db.adapter.queryTable(...args);
       },
     };
 
     const notify = easyNotify({
-      database: db.adapter,
+      database: counting,
       secret: SECRET,
       cron: { secret: "cron" },
       session: { getUserId: async () => "u1" },
@@ -188,7 +194,7 @@ describe.skipIf(!available)("preferences plugin", () => {
       channels: { inApp: { enabled: true } },
       delivery: { mode: "cron" },
       logger: silent,
-      plugins: [preferences({ database: counting, secret: SECRET })],
+      plugins: [preferences()],
     });
 
     await notify.send("commentReply", { to: ["a", "b", "c", "d", "e"], payload: {} });
@@ -198,13 +204,13 @@ describe.skipIf(!available)("preferences plugin", () => {
   it("fails closed when the preference load throws", async () => {
     const broken = {
       ...db.adapter,
-      listPreferences: async () => {
+      queryTable: async () => {
         throw new Error("database unreachable");
       },
     };
 
     const notify = easyNotify({
-      database: db.adapter,
+      database: broken,
       secret: SECRET,
       cron: { secret: "cron" },
       session: { getUserId: async () => "u1" },
@@ -213,7 +219,7 @@ describe.skipIf(!available)("preferences plugin", () => {
       channels: { inApp: { enabled: true } },
       delivery: { mode: "cron" },
       logger: silent,
-      plugins: [preferences({ database: broken, secret: SECRET })],
+      plugins: [preferences()],
     });
 
     // The whole point of the fail-closed policy: an unreachable preference
@@ -226,9 +232,19 @@ describe.skipIf(!available)("preferences plugin", () => {
 
   describe("routes", () => {
     it("returns the caller's preference matrix", async () => {
-      await db.adapter.upsertPreferences([
-        { userId: "u1", type: "commentReply", channel: "email", enabled: false, frequency: "off" },
-      ]);
+      await db.preferences.upsert(
+        "notification_preference",
+        [
+          {
+            userId: "u1",
+            type: "commentReply",
+            channel: "email",
+            enabled: false,
+            frequency: "off",
+          },
+        ],
+        { onConflict: ["userId", "type", "channel"] },
+      );
 
       const response = await build().handler.GET(new Request(`https://app.dev${BASE}/preferences`));
       const body = (await response.json()) as { preferences: unknown[] };
@@ -247,8 +263,12 @@ describe.skipIf(!available)("preferences plugin", () => {
         }),
       );
 
-      expect(await db.adapter.listPreferences(["u2"])).toHaveLength(0);
-      expect(await db.adapter.listPreferences(["u1"])).toHaveLength(1);
+      expect(await db.preferences.find("notification_preference", { userId: "u2" })).toHaveLength(
+        0,
+      );
+      expect(await db.preferences.find("notification_preference", { userId: "u1" })).toHaveLength(
+        1,
+      );
     });
 
     it("rejects an update missing type or channel", async () => {
@@ -282,13 +302,13 @@ describe.skipIf(!available)("preferences plugin", () => {
         channels: { inApp: { enabled: true } },
         delivery: { mode: "cron" },
         logger: silent,
-        plugins: [preferences({ database: db.adapter, secret: SECRET })],
+        plugins: [preferences()],
       });
 
       const response = await notify.handler.POST(unsubscribe(token));
       expect(response.status).toBe(200);
 
-      const rows = await db.adapter.listPreferences(["u9"]);
+      const rows = await db.preferences.find("notification_preference", { userId: "u9" });
       expect(rows[0]).toMatchObject({ channel: "email", enabled: false, frequency: "off" });
     });
 
@@ -301,7 +321,9 @@ describe.skipIf(!available)("preferences plugin", () => {
       });
 
       expect((await build().handler.POST(unsubscribe(forged))).status).toBe(400);
-      expect(await db.adapter.listPreferences(["u9"])).toHaveLength(0);
+      expect(await db.preferences.find("notification_preference", { userId: "u9" })).toHaveLength(
+        0,
+      );
     });
 
     it("400s on a token minted for a different purpose", async () => {
@@ -325,7 +347,7 @@ describe.skipIf(!available)("preferences plugin", () => {
   });
 
   it("rejects two plugins claiming the same route", () => {
-    const first = preferences({ database: db.adapter, secret: SECRET });
+    const first = preferences();
     expect(() =>
       easyNotify({
         database: db.adapter,
