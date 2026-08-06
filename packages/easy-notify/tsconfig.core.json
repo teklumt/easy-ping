@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  // Only the surfaces where plugin-type composition lives. tsconfig `exclude`
+  // cannot keep Drizzle out — the DB tests pull it in through imports — so
+  // this narrows by inclusion instead. Small and sensitive on purpose.
+  "include": ["src/core", "src/client", "src/react", "src/plugins", "test/types"]
+}
