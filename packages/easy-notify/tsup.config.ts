@@ -23,6 +23,8 @@ export default defineConfig([
       testing: "src/testing/index.ts",
       "providers/resend": "src/providers/resend/index.ts",
       "plugins/preferences": "src/plugins/preferences/index.ts",
+      "plugins/digests": "src/plugins/digests/index.ts",
+      "plugins/push": "src/plugins/push/index.ts",
       "plugins/preferences-client": "src/plugins/preferences/client.ts",
     },
   },

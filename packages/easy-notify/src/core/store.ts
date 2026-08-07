@@ -118,6 +118,21 @@ export function createPluginStore(
 
   const qualified = (table: TableDeclaration) => prefix + table.tableName;
 
+  /**
+   * json columns must be handed to the driver as text; postgres-js cannot bind
+   * a plain object and the insert fails outright.
+   */
+  const serialize = (table: TableDeclaration, row: Record<string, unknown>) => {
+    const out: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(row)) {
+      out[field] =
+        table.fields[field]?.type === "json" && value !== null && value !== undefined
+          ? JSON.stringify(value)
+          : value;
+    }
+    return out;
+  };
+
   return {
     async find(table, where = {}, options = {}) {
       const declaration = resolve(table);
@@ -132,7 +147,12 @@ export function createPluginStore(
       return rows.map((row) => {
         const mapped: Record<string, unknown> = {};
         for (const field of Object.keys(declaration.fields)) {
-          mapped[field] = row[toSnakeCase(field)];
+          const value = row[toSnakeCase(field)];
+          // Drivers differ: some hand back parsed jsonb, some raw text.
+          mapped[field] =
+            declaration.fields[field]?.type === "json" && typeof value === "string"
+              ? JSON.parse(value)
+              : value;
         }
         return mapped;
       }) as never;
@@ -141,21 +161,28 @@ export function createPluginStore(
     async insert(table, rows) {
       const declaration = resolve(table);
       for (const row of rows) checkFields(declaration, Object.keys(row), "insert");
-      return storage.insertRows(qualified(declaration), rows);
+      return storage.insertRows(
+        qualified(declaration),
+        rows.map((row) => serialize(declaration, row)),
+      );
     },
 
     async upsert(table, rows, options) {
       const declaration = resolve(table);
       for (const row of rows) checkFields(declaration, Object.keys(row), "upsert");
       checkFields(declaration, options.onConflict, "onConflict");
-      return storage.insertRows(qualified(declaration), rows, options.onConflict);
+      return storage.insertRows(
+        qualified(declaration),
+        rows.map((row) => serialize(declaration, row)),
+        options.onConflict,
+      );
     },
 
     async update(table, where, set) {
       const declaration = resolve(table);
       checkFields(declaration, Object.keys(where), "where");
       checkFields(declaration, Object.keys(set), "update");
-      return storage.updateRows(qualified(declaration), where, set);
+      return storage.updateRows(qualified(declaration), where, serialize(declaration, set));
     },
 
     async remove(table, where) {

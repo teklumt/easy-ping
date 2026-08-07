@@ -4,7 +4,7 @@
 
 A framework-agnostic, type-safe, self-hosted notifications library for TypeScript — in-app inbox, transactional email, and a plugin system for the rest.
 
-> **Status: pre-release (v0.0.0).** The core pipeline, Postgres adapter, and React client work and are covered by tests against a real database. Preferences, digests, push, and realtime are not built yet. APIs may still move.
+> **Status: pre-release (v0.0.0).** The core pipeline, Postgres adapter, React client, and the preferences, digests and push plugins all work and are covered by tests against a real database. Realtime and batching are not built. Both providers — email and push — are exercised against stubs, never a live service. APIs may still move.
 
 ---
 
@@ -181,11 +181,13 @@ process.on("SIGTERM", () => worker.stop()); // drains in-flight work, releases l
 | --- | --- |
 | `inApp` | ✅ built in, on by default, needs no provider |
 | `email` | ✅ Resend provider; the interface is open for others |
-| `push` | ⬜ not implemented |
+| `push` | ✅ via the push plugin — device registry, fan-out, token pruning |
 | `sms` | ⬜ not implemented |
 | `slack` | ⬜ not implemented |
 
-The unimplemented ones exist in the `Channel` union so plugins can add them later. Declaring one today **warns at startup** and reports `skipped: "channel-unavailable"` — deliberately distinct from `"no-channels"`, so a missing provider never looks like a user opt-out.
+A channel is usable when core carries it (`inApp`, `email`) or a plugin declares it and can `deliver` it. That is how push works, and how sms and slack will.
+
+Declaring a channel nothing can carry **warns at startup** and reports `skipped: "channel-unavailable"` — deliberately distinct from `"no-channels"`, so a missing provider never looks like a user opt-out.
 
 ## Security notes
 
@@ -206,8 +208,11 @@ The unimplemented ones exist in the `Channel` union so plugins can add them late
 | ✅ Resend provider | |
 | ✅ Route handler, session scoping, cron | |
 | ✅ React client, polling, optimistic updates | |
-| ⬜ preferences plugin + `<PreferenceCenter />` | the wedge |
-| ⬜ digests, push, realtime, batching | |
+| ✅ preferences plugin + headless `usePreferences` | the wedge |
+| ✅ digests plugin, timezone-aware | |
+| ✅ push plugin, device registry + pruning | needs a PushProvider |
+| ✅ scoped plugin storage, so plugins own their tables | |
+| ⬜ realtime, batching | |
 | ⬜ Prisma / Kysely adapters, Vue / Svelte bindings | |
 
 ---
