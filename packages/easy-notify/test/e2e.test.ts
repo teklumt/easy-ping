@@ -8,6 +8,7 @@ import type { Recipient } from "../src/core/types";
 import { toNodeHandler } from "../src/node";
 import { buildUnsubscribeToken, preferences } from "../src/plugins/preferences";
 import { createTestDatabase, postgresReachable, type TestDatabase } from "./helpers/pg";
+import { waitUntil } from "./helpers/wait";
 
 /**
  * Everything except email, exercised over a real socket.
@@ -72,8 +73,6 @@ const clientFor = (userId: string) =>
 const call = (path: string, init?: RequestInit) =>
   globalThis.fetch(`${origin}/api/notifications${path}`, init);
 
-const settle = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const available = await postgresReachable();
 
 describe.skipIf(!available)("end-to-end over real HTTP", () => {
@@ -106,7 +105,7 @@ describe.skipIf(!available)("end-to-end over real HTTP", () => {
 
     const client = clientFor("alice");
     const unsubscribe = client.subscribe(() => {});
-    await settle();
+    await waitUntil(() => client.getState().notifications.length === 1);
 
     const state = client.getState();
     expect(state.notifications).toHaveLength(1);
@@ -121,7 +120,7 @@ describe.skipIf(!available)("end-to-end over real HTTP", () => {
 
     const client = clientFor("alice");
     const unsubscribe = client.subscribe(() => {});
-    await settle();
+    await waitUntil(() => client.getState().isLoading === false);
 
     expect(client.getState().notifications).toHaveLength(0);
     expect(client.getState().unseenCount).toBe(0);
@@ -133,7 +132,7 @@ describe.skipIf(!available)("end-to-end over real HTTP", () => {
 
     const client = clientFor("alice");
     const unsubscribe = client.subscribe(() => {});
-    await settle();
+    await waitUntil(() => client.getState().notifications.length === 1);
 
     await client.markSeen();
     expect(client.getState().unseenCount).toBe(0);
@@ -200,8 +199,7 @@ describe.skipIf(!available)("end-to-end over real HTTP", () => {
     });
 
     const unsubscribe = client.subscribe(() => {});
-    await settle();
-    expect(client.getState().notifications).toHaveLength(2);
+    await waitUntil(() => client.getState().notifications.length === 2);
 
     await client.loadMore();
     expect(client.getState().notifications).toHaveLength(4);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createNotifyClient, type NotifyState } from "../src/client";
+import { waitUntil } from "./helpers/wait";
 
 type Row = {
   id: string;
@@ -199,7 +200,7 @@ describe("notify client", () => {
     expect(api.calls).toHaveLength(0);
 
     hidden = false;
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await waitUntil(() => api.calls.length > 0);
     expect(api.calls.length).toBeGreaterThan(0);
     unsubscribe();
   });

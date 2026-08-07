@@ -243,6 +243,26 @@ pnpm test
 
 Database tests skip locally when Postgres is unreachable, and **fail** in CI — a green build that ran none of them is worse than a red one.
 
+## Releasing
+
+Nothing is on npm yet. The name `easy-notify` is unclaimed.
+
+The Release workflow only maintains the version PR; it does **not** publish. npm trusted publishing (OIDC) cannot create a package that does not exist — a trusted publisher is configured against an existing package, so the first `PUT` is rejected as `E404`, which reads like "name taken" and is not.
+
+The first release is manual:
+
+```bash
+# 1. bump off 0.0.0
+pnpm changeset            # choose minor -> 0.1.0
+pnpm changeset version
+
+# 2. publish once, by hand
+npm login
+pnpm --filter easy-notify publish --access public
+```
+
+Then enable trusted publishing on npmjs.com for this repo and this workflow, and re-add `publish: pnpm changeset publish` to `.github/workflows/release.yml`. Every release after that is automatic.
+
 ## License
 
 MIT

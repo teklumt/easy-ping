@@ -6,6 +6,7 @@ import type { EmailProvider } from "../src/core/provider";
 import { createRunner } from "../src/core/runner";
 import type { Recipient } from "../src/core/types";
 import { createTestDatabase, postgresReachable, type TestDatabase } from "./helpers/pg";
+import { waitUntil } from "./helpers/wait";
 
 const silent = { warn: () => {}, error: () => {} };
 
@@ -116,7 +117,7 @@ describe("BUG F: a provider timeout must abort the in-flight request", () => {
     });
 
     await runner.runOnce();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitUntil(() => sawAbort);
 
     expect(sawAbort).toBe(true);
   });
