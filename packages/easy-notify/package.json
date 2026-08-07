@@ -64,6 +64,16 @@
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js",
       "require": "./dist/node.cjs"
+    },
+    "./plugins/digests": {
+      "types": "./dist/plugins/digests.d.ts",
+      "import": "./dist/plugins/digests.js",
+      "require": "./dist/plugins/digests.cjs"
+    },
+    "./plugins/push": {
+      "types": "./dist/plugins/push.d.ts",
+      "import": "./dist/plugins/push.js",
+      "require": "./dist/plugins/push.cjs"
     }
   },
   "peerDependencies": {

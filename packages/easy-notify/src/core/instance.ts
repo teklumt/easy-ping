@@ -112,7 +112,7 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
   const unusable = new Map<string, string[]>();
   for (const [type, definition] of Object.entries(config.notifications)) {
     const missing = definition.channels.filter(
-      (channel) => !isChannelUsable(channel, config.channels),
+      (channel) => !isChannelUsable(channel, config.channels, plugins),
     );
     if (missing.length > 0) unusable.set(type, [...missing]);
   }
@@ -146,15 +146,6 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
     batchSize: config.delivery?.batchSize ?? DEFAULTS.batchSize,
     backoff: (config.delivery?.backoff ?? "exponential") as Backoff,
   });
-
-  // Before any hook or route can run.
-  for (const plugin of plugins) {
-    plugin.init?.({
-      store: createPluginStore(plugin.id, plugin.schema, config.database, tablePrefix),
-      secret: config.secret,
-      logger,
-    });
-  }
 
   const pluginRoutes = plugins.flatMap((plugin) => plugin.routes ?? []);
 
@@ -207,6 +198,17 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
     }
 
     return result;
+  }
+
+  // After send() exists, before any hook or route can run.
+  for (const plugin of plugins) {
+    plugin.init?.({
+      store: createPluginStore(plugin.id, plugin.schema, config.database, tablePrefix),
+      secret: config.secret,
+      logger,
+      getRecipients: config.getRecipients,
+      send: (type, args) => send(type as keyof TDefs & string, args as never) as Promise<unknown>,
+    });
   }
 
   return {

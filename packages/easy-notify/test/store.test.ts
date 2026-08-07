@@ -92,6 +92,22 @@ describe.skipIf(!available)("plugin store", () => {
       expect(rows[0]?.itemCount).toBe(9);
     });
 
+    it("round-trips a json column", async () => {
+      // postgres-js cannot bind a plain object, so the store serialises json
+      // fields on write. Getting this wrong fails the insert outright.
+      const payload = { nested: { items: [1, 2, 3] }, flag: true };
+      await store.insert(TABLE, [row("a", { payload })]);
+
+      const [found] = await store.find<{ payload: typeof payload }>(TABLE);
+      expect(found?.payload).toEqual(payload);
+    });
+
+    it("accepts a null json column", async () => {
+      await store.insert(TABLE, [row("a", { payload: null })]);
+      const [found] = await store.find<{ payload: unknown }>(TABLE);
+      expect(found?.payload).toBeNull();
+    });
+
     it("round-trips dates and booleans", async () => {
       const sendAfter = new Date("2026-03-01T09:00:00.000Z");
       await store.insert(TABLE, [row("a", { sendAfter, active: false })]);

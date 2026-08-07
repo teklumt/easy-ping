@@ -113,11 +113,42 @@ export function createRunner(deps: RunnerDeps) {
       }
     }
 
-    return {
-      result: "failed",
-      error: `channel "${delivery.channel}" has no provider in this version`,
-      retryable: false,
-    };
+    const owner = deps.plugins.find(
+      (plugin) => plugin.channels?.includes(delivery.channel) && plugin.hooks?.deliver,
+    );
+    if (!owner?.hooks?.deliver) {
+      return {
+        result: "failed",
+        error: `no plugin delivers channel "${delivery.channel}"`,
+        retryable: false,
+      };
+    }
+
+    try {
+      return await withTimeout(
+        (signal) =>
+          Promise.resolve(
+            // biome-ignore lint/style/noNonNullAssertion: guarded directly above
+            owner.hooks!.deliver!({
+              channel: delivery.channel,
+              deliveryId: delivery.id,
+              attempt: delivery.attempts + 1,
+              recipient,
+              notification: {
+                id: delivery.notificationId,
+                userId: delivery.notification.userId,
+                type: delivery.notification.type,
+                payload: delivery.notification.payload,
+              },
+              signal,
+            }),
+          ),
+        30_000,
+        `plugin "${owner.id}" deliver`,
+      );
+    } catch (error) {
+      return { result: "failed", error: message(error), retryable: true };
+    }
   }
 
   async function notifyAfterDeliver(delivery: ClaimedDelivery, outcome: DeliveryOutcome) {

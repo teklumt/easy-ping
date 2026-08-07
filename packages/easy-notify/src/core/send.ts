@@ -48,10 +48,15 @@ async function validatePayload(type: string, schema: StandardSchemaV1, payload: 
  * declaring `channels: ["email"]` with no email provider silently degrades to
  * in-app rather than throwing at send time.
  */
-export function isChannelUsable(channel: Channel, channels: ChannelsConfig): boolean {
+export function isChannelUsable(
+  channel: Channel,
+  channels: ChannelsConfig,
+  plugins: readonly AnyPlugin[] = [],
+): boolean {
   if (channel === "inApp") return channels.inApp?.enabled !== false;
   if (channel === "email") return Boolean(channels.email?.provider);
-  return false;
+  // Anything else is usable only if a plugin claims it and can deliver it.
+  return plugins.some((plugin) => plugin.channels?.includes(channel) && plugin.hooks?.deliver);
 }
 
 /** One prepare() per plugin per send, keyed by plugin id. */
@@ -181,7 +186,9 @@ export async function runSend(
   const actorId = input.actorId ?? null;
 
   const declared = input.overrides?.channels ?? definition.channels;
-  const requested = declared.filter((channel) => isChannelUsable(channel, deps.channels));
+  const requested = declared.filter((channel) =>
+    isChannelUsable(channel, deps.channels, deps.plugins),
+  );
 
   // Distinguished from "no-channels" so a missing provider does not look
   // identical to a user having opted out of everything.
@@ -226,7 +233,7 @@ export async function runSend(
     const now = new Date();
     const deliveries: InsertDelivery[] = resolved
       .filter((decision) => decision.action !== "skip")
-      .filter((decision) => isChannelUsable(decision.channel, deps.channels))
+      .filter((decision) => isChannelUsable(decision.channel, deps.channels, deps.plugins))
       .map((decision) => ({
         id: newId(),
         channel: decision.channel,
@@ -263,17 +270,33 @@ export async function runSend(
     if (deduped.includes(row.id)) skipped.push({ userId: row.userId, reason: "deduped" });
   }
 
-  return {
-    notifications: rows
-      .filter((row) => createdSet.has(row.id))
-      .map((row) => ({
-        id: row.id,
-        userId: row.userId,
-        deliveries: row.deliveries.map((delivery) => ({
-          id: delivery.id,
-          channel: delivery.channel,
-        })),
+  const notifications = rows
+    .filter((row) => createdSet.has(row.id))
+    .map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      deliveries: row.deliveries.map((delivery) => ({
+        id: delivery.id,
+        channel: delivery.channel,
       })),
-    skipped,
-  };
+    }));
+
+  for (const plugin of deps.plugins) {
+    const hook = plugin.hooks?.afterSend;
+    if (!hook) continue;
+    try {
+      await hook({
+        type,
+        payload,
+        notifications: notifications.map(({ id, userId }) => ({ id, userId })),
+        prepared: prepared.get(plugin.id),
+      });
+    } catch (error) {
+      // Fails open: the rows are committed, and throwing here would report a
+      // send that actually happened as a failure.
+      deps.logger.error(`plugin "${plugin.id}" afterSend threw; ignoring`, { type, error });
+    }
+  }
+
+  return { notifications, skipped };
 }

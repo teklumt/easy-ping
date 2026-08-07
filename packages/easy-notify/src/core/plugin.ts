@@ -40,6 +40,25 @@ export type ResolveChannelsContext = {
   prepared: unknown;
 };
 
+export type DeliverContext = {
+  channel: Channel;
+  deliveryId: string;
+  attempt: number;
+  recipient: Recipient;
+  notification: { id: string; userId: string; type: string; payload: unknown };
+  /** Aborted on the runner's timeout. */
+  signal: AbortSignal;
+};
+
+export type AfterSendContext = {
+  type: string;
+  payload: unknown;
+  /** Committed rows. Ids exist only at this point. */
+  notifications: readonly { id: string; userId: string }[];
+  /** Whatever this plugin's own prepare() returned for this send. */
+  prepared: unknown;
+};
+
 export type AfterDeliverContext = {
   deliveryId: string;
   notificationId: string;
@@ -56,6 +75,18 @@ export type PluginHooks = {
   prepare?: (ctx: PrepareContext) => Promisable<unknown>;
   beforeSend?: (ctx: BeforeSendContext) => Promisable<BeforeSendResult>;
   resolveChannels?: (ctx: ResolveChannelsContext) => Promisable<readonly ChannelDecision[]>;
+  /**
+   * Once per send, after the rows are committed. The only hook that sees
+   * notification ids, which digests needs to bucket an entry against one.
+   * Fails open: the notification is already written.
+   */
+  afterSend?: (ctx: AfterSendContext) => Promisable<void>;
+  /**
+   * Delivers one of the plugin's declared `channels`. Core carries inApp and
+   * email; everything else arrives here, which is how push, sms and slack are
+   * added without core learning about them.
+   */
+  deliver?: (ctx: DeliverContext) => Promisable<DeliveryOutcome>;
   afterDeliver?: (ctx: AfterDeliverContext) => Promisable<void>;
 };
 
@@ -113,6 +144,17 @@ export type PluginInitContext = {
   /** The top-level signing secret, for plugins issuing signed links. */
   secret: string;
   logger: Logger;
+  /** The app's resolver, for plugins that need timezones or addresses. */
+  getRecipients: (userIds: readonly string[]) => Promise<readonly Recipient[]>;
+  /**
+   * The instance's own send(). A plugin composing a message (a digest, say)
+   * routes it back through the pipeline rather than reaching for a provider,
+   * so it inherits retry, backoff and idempotency for free.
+   */
+  send: (
+    type: string,
+    args: { to: string | readonly string[]; payload: unknown; dedupeKey?: string },
+  ) => Promise<unknown>;
 };
 
 export type EasyNotifyPlugin<
@@ -124,6 +166,8 @@ export type EasyNotifyPlugin<
   schema?: TSchema;
   routes?: readonly RouteDefinition[];
   hooks?: PluginHooks;
+  /** Channels this plugin delivers. Makes them usable in a notification. */
+  channels?: readonly Channel[];
   /** Called once by easyNotify() before any hook or route can run. */
   init?: (ctx: PluginInitContext) => void;
 };
