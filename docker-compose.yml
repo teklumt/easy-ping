@@ -1,6 +1,9 @@
 services:
   postgres:
     image: postgres:17-alpine
+    # Comes back on its own after a Docker Desktop restart. Without it the
+    # suite silently skips every database test until someone notices.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: easynotify
       POSTGRES_PASSWORD: easynotify
@@ -14,4 +17,26 @@ services:
       test: ["CMD-SHELL", "pg_isready -U easynotify -d easynotify_test"]
       interval: 2s
       timeout: 3s
+      retries: 30
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # A replica set of one. Mongo only offers transactions on a replica set,
+    # and createNotifications needs the notification and its deliveries to
+    # land together. Running mongod on 27019 rather than remapping the port
+    # keeps the address the set advertises the same one the host dials.
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
+    ports:
+      - "27019:27019"
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --port 27019 --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27019'}]}).ok }\" | grep -q 1",
+        ]
+      interval: 2s
+      timeout: 5s
       retries: 30

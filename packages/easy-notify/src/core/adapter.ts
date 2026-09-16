@@ -79,6 +79,19 @@ export type FeedPage = {
 export type DatabaseAdapter = {
   readonly name: string;
 
+  /**
+   * How the adapter names stored fields. SQL adapters use snake_case columns;
+   * document stores keep the declared camelCase. The plugin store translates
+   * accordingly rather than assuming one of them.
+   */
+  readonly naming?: "snake_case" | "preserve";
+
+  /**
+   * True when json values must reach the driver as strings. postgres-js cannot
+   * bind a plain object; Mongo stores one natively.
+   */
+  readonly serializesJson?: boolean;
+
   /** One transaction. A duplicate (userId, dedupeKey) is reported, not thrown. */
   createNotifications(rows: readonly InsertNotification[]): Promise<{
     created: readonly string[];

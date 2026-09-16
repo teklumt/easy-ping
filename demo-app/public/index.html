@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>easy-notify demo</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 15px/1.5 ui-sans-serif, system-ui, sans-serif;
+        max-width: 44rem; margin: 3rem auto; padding: 0 1.25rem;
+      }
+      h1 { font-size: 1.25rem; margin-bottom: .25rem; }
+      p.sub { opacity: .65; margin-top: 0; }
+      .row { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1.25rem 0; }
+      button {
+        font: inherit; padding: .5rem .9rem; border-radius: .5rem;
+        border: 1px solid color-mix(in oklab, currentColor 25%, transparent);
+        background: transparent; color: inherit; cursor: pointer;
+      }
+      button:hover { background: color-mix(in oklab, currentColor 8%, transparent); }
+      #badge {
+        display: inline-block; min-width: 1.5rem; padding: .1rem .4rem; text-align: center;
+        border-radius: 1rem; background: #d33; color: #fff; font-size: .8rem;
+      }
+      ul { list-style: none; padding: 0; }
+      li { padding: .6rem .75rem; border-radius: .5rem;
+           border: 1px solid color-mix(in oklab, currentColor 15%, transparent); margin-bottom: .4rem; }
+      li.unread { border-left: 3px solid #d33; }
+      li.read { opacity: .55; }
+      li span { display: block; opacity: .7; font-size: .9rem; }
+      #log { font-family: ui-monospace, monospace; font-size: .8rem; opacity: .7;
+             margin-top: 1.5rem; max-height: 12rem; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>easy-notify demo</h1>
+    <p class="sub">
+      user <code id="who"></code> — add <code>?user=someone</code> to act as another person
+    </p>
+
+    <div class="row">
+      <button type="button" id="enable">Enable push</button>
+      <button type="button" id="disable">Disable push</button>
+      <button type="button" id="send">Send a notification</button>
+      <button type="button" id="seen">Mark seen</button>
+    </div>
+
+    <p>Unseen <span id="badge">0</span></p>
+    <ul id="feed"></ul>
+    <div id="log"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
