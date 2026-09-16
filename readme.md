@@ -4,7 +4,7 @@
 
 A framework-agnostic, type-safe, self-hosted notifications library for TypeScript — in-app inbox, transactional email, and a plugin system for the rest.
 
-> **Status: pre-release (v0.0.0).** The core pipeline, Postgres adapter, React client, and the preferences, digests and push plugins all work and are covered by tests against a real database. Realtime and batching are not built. Both providers — email and push — are exercised against stubs, never a live service. APIs may still move.
+> **Status: pre-release (v0.0.0).** The core pipeline, Postgres adapter, React client, and the preferences, digests and push plugins all work and are covered by tests against a real database. Realtime and batching are not built. Providers are exercised against stubs and, for push, an independent decrypt — but never against a live push service or a real Resend key. APIs may still move.
 
 ---
 
@@ -42,6 +42,32 @@ import { coreSchema, renderPostgresDdl } from "easy-notify/schema";
 
 for (const statement of renderPostgresDdl(coreSchema)) await sql.unsafe(statement);
 ```
+
+<details>
+<summary>On MongoDB instead</summary>
+
+```bash
+pnpm add easy-notify mongodb zod
+```
+
+```ts
+import { createMongoIndexes, mongoAdapter } from "easy-notify/adapters/mongodb";
+
+const client = new MongoClient(process.env.MONGO_URL!);
+await client.connect();
+const db = client.db("app");
+
+// There are no tables to create, only indexes. Run once at startup.
+await createMongoIndexes(db);
+
+// Pass the client too: it is what makes a notification and its deliveries
+// land together, which needs a replica set.
+const database = mongoAdapter(db, { client });
+```
+
+Everything after this point is identical.
+
+</details>
 
 ### 3. Configure
 
@@ -181,7 +207,7 @@ process.on("SIGTERM", () => worker.stop()); // drains in-flight work, releases l
 | --- | --- |
 | `inApp` | ✅ built in, on by default, needs no provider |
 | `email` | ✅ Resend provider; the interface is open for others |
-| `push` | ✅ via the push plugin — device registry, fan-out, token pruning |
+| `push` | ✅ push plugin + `webPush()` — VAPID and aes128gcm on Web Crypto, so it runs on edge too |
 | `sms` | ⬜ not implemented |
 | `slack` | ⬜ not implemented |
 
@@ -204,13 +230,14 @@ Declaring a channel nothing can carry **warns at startup** and reports `skipped:
 | --- | --- |
 | ✅ Core `send()` pipeline, hooks, dedupe | |
 | ✅ Postgres via Drizzle, with a conformance suite | |
+| ✅ MongoDB, same conformance suite | |
 | ✅ Delivery runner, all four modes, retry + backoff | |
 | ✅ Resend provider | |
 | ✅ Route handler, session scoping, cron | |
 | ✅ React client, polling, optimistic updates | |
 | ✅ preferences plugin + headless `usePreferences` | the wedge |
 | ✅ digests plugin, timezone-aware | |
-| ✅ push plugin, device registry + pruning | needs a PushProvider |
+| ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
 | ✅ scoped plugin storage, so plugins own their tables | |
 | ⬜ realtime, batching | |
 | ⬜ Prisma / Kysely adapters, Vue / Svelte bindings | |
@@ -225,11 +252,18 @@ The one operation with no equivalent in other libraries is atomic claiming — w
 import { adapterConformanceCases } from "easy-notify/testing";
 
 for (const testCase of adapterConformanceCases) {
-  it(testCase.name, () => testCase.run({ adapter, exec, reset, lockRow }));
+  it(testCase.name, () => testCase.run({ adapter, reset, setAttempts, lockRow }));
 }
 ```
 
-Thirteen cases. The one that matters asserts a row locked by another transaction is *skipped*, not waited on.
+Thirteen cases. The one that matters asserts a row locked by another transaction is *skipped*, not waited on; it is tagged `requires: "rowLock"`, and a store whose claim is a single atomic update filters it out rather than faking it.
+
+Declare your dialect on the adapter so the plugin store writes what your driver expects:
+
+```ts
+naming: "snake_case" | "preserve"   // columns, or the declared field names
+serializesJson: boolean             // json as a string, or natively
+```
 
 ---
 
@@ -237,11 +271,33 @@ Thirteen cases. The one that matters asserts a row locked by another transaction
 
 ```bash
 pnpm install
-docker compose up -d     # Postgres on :54329 for the test suite
+docker compose up -d     # Postgres on :54329, MongoDB on :27019
 pnpm test
 ```
 
-Database tests skip locally when Postgres is unreachable, and **fail** in CI — a green build that ran none of them is worse than a red one.
+Mongo runs as a single-node replica set, because that is the only way it offers transactions.
+
+Database tests skip locally when a database is unreachable, and **fail** in CI — a green build that ran none of them is worse than a red one.
+
+## Releasing
+
+Nothing is on npm yet. The name `easy-notify` is unclaimed.
+
+The Release workflow only maintains the version PR; it does **not** publish. npm trusted publishing (OIDC) cannot create a package that does not exist — a trusted publisher is configured against an existing package, so the first `PUT` is rejected as `E404`, which reads like "name taken" and is not.
+
+The first release is manual:
+
+```bash
+# 1. bump off 0.0.0
+pnpm changeset            # choose minor -> 0.1.0
+pnpm changeset version
+
+# 2. publish once, by hand
+npm login
+pnpm --filter easy-notify publish --access public
+```
+
+Then enable trusted publishing on npmjs.com for this repo and this workflow, and re-add `publish: pnpm changeset publish` to `.github/workflows/release.yml`. Every release after that is automatic.
 
 ## License
 

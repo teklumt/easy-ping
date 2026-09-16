@@ -19,6 +19,11 @@
       "import": "./dist/adapters/drizzle.js",
       "require": "./dist/adapters/drizzle.cjs"
     },
+    "./adapters/mongodb": {
+      "types": "./dist/adapters/mongodb.d.ts",
+      "import": "./dist/adapters/mongodb.js",
+      "require": "./dist/adapters/mongodb.cjs"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",
@@ -74,6 +79,16 @@
       "types": "./dist/plugins/push.d.ts",
       "import": "./dist/plugins/push.js",
       "require": "./dist/plugins/push.cjs"
+    },
+    "./providers/web-push": {
+      "types": "./dist/providers/web-push.d.ts",
+      "import": "./dist/providers/web-push.js",
+      "require": "./dist/providers/web-push.cjs"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "require": "./dist/browser.cjs"
     }
   },
   "peerDependencies": {
@@ -100,6 +115,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "drizzle-orm": "^0.45.2",
+    "mongodb": "^7.6.0",
     "postgres": "^3.4.9",
     "react": "^19.2.8",
     "tsup": "^8.3.0",

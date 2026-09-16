@@ -14,8 +14,13 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      # See ci.yml: Mongo needs a replica-set command override, which a
+      # service container cannot express.
+      - run: docker compose up -d --wait
 
       - uses: pnpm/action-setup@v4
 
@@ -27,14 +32,32 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
+
+      # The gates run here as well as in CI. CI runs in parallel, so without
+      # this a release could go out from a commit whose tests are still red.
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
 
+      # Only maintains the version PR. `publish` is deliberately absent:
+      #
+      # npm trusted publishing (OIDC) cannot create a package that does not
+      # exist yet — a trusted publisher is configured on an existing package,
+      # so there is nothing to attach it to. The registry rejects that first
+      # PUT as E404, which reads like "name taken" and is not.
+      #
+      # The first release must therefore be published by hand:
+      #
+      #   npm login
+      #   pnpm --filter easy-notify publish --access public
+      #
+      # then enable trusted publishing on npmjs.com for this repo and workflow
+      # and re-add `publish: pnpm changeset publish` below.
       - uses: changesets/action@v1
         with:
           version: pnpm changeset version
-          publish: pnpm changeset publish
           commit: "chore: release"
           title: "chore: release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true

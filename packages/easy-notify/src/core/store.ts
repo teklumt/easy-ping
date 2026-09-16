@@ -51,6 +51,9 @@ export type PluginStore = {
 };
 
 export type TableStorage = {
+  readonly naming?: "snake_case" | "preserve";
+  readonly serializesJson?: boolean;
+
   queryTable(
     table: string,
     where: WhereClause,
@@ -118,11 +121,16 @@ export function createPluginStore(
 
   const qualified = (table: TableDeclaration) => prefix + table.tableName;
 
+  // A document store keeps the declared names; a SQL adapter wants columns.
+  const column = (field: string) => (storage.naming === "preserve" ? field : toSnakeCase(field));
+
   /**
    * json columns must be handed to the driver as text; postgres-js cannot bind
    * a plain object and the insert fails outright.
    */
   const serialize = (table: TableDeclaration, row: Record<string, unknown>) => {
+    if (storage.serializesJson === false) return row;
+
     const out: Record<string, unknown> = {};
     for (const [field, value] of Object.entries(row)) {
       out[field] =
@@ -147,7 +155,7 @@ export function createPluginStore(
       return rows.map((row) => {
         const mapped: Record<string, unknown> = {};
         for (const field of Object.keys(declaration.fields)) {
-          const value = row[toSnakeCase(field)];
+          const value = row[column(field)];
           // Drivers differ: some hand back parsed jsonb, some raw text.
           mapped[field] =
             declaration.fields[field]?.type === "json" && typeof value === "string"

@@ -18,23 +18,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: easynotify
-          POSTGRES_PASSWORD: easynotify
-          POSTGRES_DB: easynotify_test
-        ports:
-          - 54329:5432
-        options: >-
-          --health-cmd "pg_isready -U easynotify -d easynotify_test"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
-
     steps:
       - uses: actions/checkout@v4
+
+      # docker compose rather than `services:`, because Mongo needs a command
+      # override to run as a replica set and a service container cannot set
+      # one. It also keeps CI and a local run on the same definition.
+      - run: docker compose up -d --wait
 
       - uses: pnpm/action-setup@v4
 

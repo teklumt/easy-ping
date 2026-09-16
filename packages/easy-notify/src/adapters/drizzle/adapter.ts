@@ -154,6 +154,8 @@ export function drizzleAdapter(
 
   return {
     name: "drizzle-pg",
+    naming: "snake_case",
+    serializesJson: true,
 
     async createNotifications(input: readonly InsertNotification[]) {
       if (input.length === 0) return { created: [], deduped: [] };

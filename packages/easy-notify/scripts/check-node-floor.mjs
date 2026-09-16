@@ -4,6 +4,7 @@
 // so randomUUID, subtle and the HMAC token signer are all absent there. The
 // package shipped claiming >=18 until CI happened to prove otherwise.
 
+import { mongoAdapter } from "../dist/adapters/mongodb.js";
 import { createNotifyClient } from "../dist/client.js";
 import { expiresIn, signToken, verifyToken } from "../dist/index.js";
 import { coreSchema, renderDrizzleSchema, renderPostgresDdl } from "../dist/schema.js";
@@ -40,6 +41,10 @@ check("verifyToken rejects wrong purpose", (await verifyToken(secret, token, "ot
 check("renderDrizzleSchema", renderDrizzleSchema(coreSchema).includes("pgTable"));
 check("renderPostgresDdl", renderPostgresDdl(coreSchema).length > 0);
 check("createNotifyClient", typeof createNotifyClient({}).subscribe === "function");
+
+// The mongo adapter takes the driver structurally, so it must construct with
+// no `mongodb` installed. Importing it is the check.
+check("mongoAdapter", mongoAdapter({ collection: () => ({}) }).name === "mongodb");
 
 if (failures.length > 0) {
   console.error(`node ${process.version}: ${failures.length} failure(s)`);

@@ -1,0 +1,20 @@
+{
+  "name": "easy-notify-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "keys": "node --experimental-strip-types src/keys.ts",
+    "dev": "node --experimental-strip-types --env-file=.env src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "easy-notify": "workspace:*",
+    "mongodb": "^7.6.0",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "examples/*"
+  - "demo-app"
 allowBuilds:
   esbuild: true
   # Next's optional image optimiser. The example is typechecked, never run,

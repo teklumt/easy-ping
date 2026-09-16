@@ -3,8 +3,12 @@ import type { Channel } from "../core/types";
 
 export type ConformanceContext = {
   adapter: DatabaseAdapter;
-  /** Raw SQL escape hatch, for reaching states the public API cannot produce. */
-  exec: (statement: string) => Promise<void>;
+  /**
+   * Forces a delivery's attempt count. Not reachable through the public API —
+   * the adapter would have marked the row failed on the way there — so each
+   * backend writes it directly.
+   */
+  setAttempts: (deliveryId: string, attempts: number) => Promise<void>;
   /**
    * Empties the tables. Cases must run against a clean table: claims are
    * ordered by not_before ASC and bounded by limit, so leftover rows from an
@@ -17,12 +21,18 @@ export type ConformanceContext = {
    * Required to test SKIP LOCKED deterministically. Two Promise.all'd claims
    * do not reliably overlap — they complete in single-digit milliseconds and
    * simply queue — so a race-based test passes even with no locking at all.
+   *
+   * Only meaningful where a claim can block on someone else's lock. A document
+   * store whose claim is a single atomic update has nothing to skip, so cases
+   * tagged `rowLock` do not apply to it.
    */
-  lockRow: (deliveryId: string, fn: () => Promise<void>) => Promise<void>;
+  lockRow?: (deliveryId: string, fn: () => Promise<void>) => Promise<void>;
 };
 
 export type ConformanceCase = {
   name: string;
+  /** Capability the case needs; a backend without it must filter the case out. */
+  requires?: "rowLock";
   run: (ctx: ConformanceContext) => Promise<void>;
 };
 
@@ -89,13 +99,17 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
      * a busy table serialises every worker behind the slowest one.
      */
     name: "a row locked by another transaction is skipped, not waited on",
+    requires: "rowLock",
     run: async (ctx) => {
+      const { lockRow } = ctx;
+      assert(lockRow, "case requires lockRow");
+
       const { rows } = await seed(ctx, { count: 2 });
       const locked = rows[0]?.deliveries[0]?.id;
       const free = rows[1]?.deliveries[0]?.id;
       assert(locked && free, "seed produced too few deliveries");
 
-      await ctx.lockRow(locked, async () => {
+      await lockRow(locked, async () => {
         const claimed = await Promise.race([
           ctx.adapter.claimPendingDeliveries({ ...CLAIM, claimToken: uid("token") }),
           new Promise<never>((_, reject) =>
@@ -192,10 +206,9 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
     run: async (ctx) => {
       const { rows } = await seed(ctx, { maxAttempts: 3 });
       const target = rows[0]?.deliveries[0]?.id;
+      assert(target, "seed produced no delivery");
 
-      // Not reachable through the public API — the adapter would have marked
-      // it failed first. Forced directly to exercise the claim predicate.
-      await ctx.exec(`UPDATE notification_delivery SET attempts = 3 WHERE id = '${target}'`);
+      await ctx.setAttempts(target, 3);
 
       const claimed = await ctx.adapter.claimPendingDeliveries({ ...CLAIM, claimToken: uid("t") });
       assert(!claimed.some((row) => row.id === target), "claimed an exhausted delivery");
