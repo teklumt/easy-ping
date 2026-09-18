@@ -4,7 +4,7 @@
 
 A framework-agnostic, type-safe, self-hosted notifications library for TypeScript — in-app inbox, transactional email, and a plugin system for the rest.
 
-> **Status: pre-release (v0.0.0).** The core pipeline, Postgres adapter, React client, and the preferences, digests and push plugins all work and are covered by tests against a real database. Realtime and batching are not built. Providers are exercised against stubs and, for push, an independent decrypt — but never against a live push service or a real Resend key. APIs may still move.
+> **Status: pre-release (v0.0.0).** The core pipeline, both adapters (Postgres and MongoDB), the React client, and the preferences, digests and push plugins all work and are covered by tests against real databases. Web push is verified end to end against Mozilla's production push service and cross-checked against `http_ece`. Realtime and batching are not built, and the Resend provider has still only been exercised against a stub. APIs may still move.
 
 ---
 
@@ -238,6 +238,7 @@ Declaring a channel nothing can carry **warns at startup** and reports `skipped:
 | ✅ preferences plugin + headless `usePreferences` | the wedge |
 | ✅ digests plugin, timezone-aware | |
 | ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
+| ✅ push verified against a live push service | Mozilla autopush, plus a cross-check against `http_ece` |
 | ✅ scoped plugin storage, so plugins own their tables | |
 | ⬜ realtime, batching | |
 | ⬜ Prisma / Kysely adapters, Vue / Svelte bindings | |
@@ -278,6 +279,12 @@ pnpm test
 Mongo runs as a single-node replica set, because that is the only way it offers transactions.
 
 Database tests skip locally when a database is unreachable, and **fail** in CI — a green build that ran none of them is worse than a red one.
+
+The push crypto is checked two ways. `web-push-reference.test.ts` decrypts our output with `http_ece` — the library `web-push` npm uses — because a decryptor written from the same RFC would share any misreading and agree with itself. `web-push-live.test.ts` then sends through Mozilla's production push service for real; it is opt-in so CI never goes red because someone else's service is having a bad afternoon:
+
+```bash
+EASY_NOTIFY_LIVE_PUSH=1 pnpm --filter easy-notify test web-push-live
+```
 
 ## Releasing
 

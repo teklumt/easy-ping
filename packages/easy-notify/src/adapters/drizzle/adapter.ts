@@ -160,6 +160,15 @@ export function drizzleAdapter(
     async createNotifications(input: readonly InsertNotification[]) {
       if (input.length === 0) return { created: [], deduped: [] };
 
+      // One clock. created_at/updated_at have a DEFAULT now() for hand-written
+      // SQL, but now() is the *database* clock while every cutoff the library
+      // compares it against (markSeen, getFailedDeliveries) comes from the app.
+      // App and database are different hosts in production, and NTP skew of a
+      // few hundred ms is routine, so the newest rows fell outside markSeen and
+      // the unseen badge never cleared. The mongo adapter always wrote these in
+      // the app; this makes both agree.
+      const now = new Date();
+
       return db.transaction(async (tx) => {
         const values = input.map(
           (row) => sql`(
@@ -169,7 +178,8 @@ export function drizzleAdapter(
             ${JSON.stringify(row.payload ?? null)}::jsonb,
             ${row.actorId ?? null}::text,
             ${row.groupKey ?? null}::text,
-            ${row.dedupeKey ?? null}::text
+            ${row.dedupeKey ?? null}::text,
+            ${ts(now)}::timestamptz
           )`,
         );
 
@@ -177,7 +187,7 @@ export function drizzleAdapter(
         // as distinct — so unlimited undeduped notifications coexist.
         const inserted = await run(
           sql`
-            INSERT INTO ${NOTIFICATION} (id, user_id, type, payload, actor_id, group_key, dedupe_key)
+            INSERT INTO ${NOTIFICATION} (id, user_id, type, payload, actor_id, group_key, dedupe_key, created_at)
             VALUES ${sql.join(values, sql`, `)}
             ON CONFLICT (user_id, dedupe_key) DO NOTHING
             RETURNING id
@@ -196,14 +206,15 @@ export function drizzleAdapter(
                 ${row.id}::text,
                 ${delivery.channel}::text,
                 ${delivery.maxAttempts}::integer,
-                ${ts(delivery.notBefore)}::timestamptz
+                ${ts(delivery.notBefore)}::timestamptz,
+                ${ts(now)}::timestamptz
               )`,
             ),
           );
 
         if (deliveries.length > 0) {
           await tx.execute(sql`
-            INSERT INTO ${DELIVERY} (id, notification_id, channel, max_attempts, not_before)
+            INSERT INTO ${DELIVERY} (id, notification_id, channel, max_attempts, not_before, updated_at)
             VALUES ${sql.join(deliveries, sql`, `)}
           `);
         }

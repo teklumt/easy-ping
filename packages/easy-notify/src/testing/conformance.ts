@@ -404,4 +404,39 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
       equal(await ctx.adapter.countUnseen(userId), 0, "unseen count wrong after markSeen");
     },
   },
+
+  {
+    /**
+     * createdAt must come from the same clock as the cutoff it is compared to.
+     *
+     * An adapter that leaves createdAt to a database DEFAULT now() is comparing
+     * the database clock against the application clock. On one machine they
+     * agree and this never fails; in production they are different hosts, and a
+     * database a second ahead means markSeen(now) silently misses the newest
+     * notifications and the unseen badge never clears. Found when a laptop
+     * resumed from sleep with its Docker VM 6s ahead.
+     */
+    name: "createdAt comes from the caller clock, not the database clock",
+    run: async (ctx) => {
+      const userId = uid("user");
+      const before = new Date();
+      await seed(ctx, { userId, count: 1 });
+      const after = new Date();
+
+      const { notifications } = await ctx.adapter.listNotifications({ userId, limit: 10 });
+      const createdAt = notifications[0]?.createdAt;
+      assert(createdAt, "seed produced no notification");
+
+      // A second of slack for a slow round trip, far under the skew that breaks
+      // markSeen but tight enough to catch a foreign clock.
+      const skewMs = Math.max(
+        before.getTime() - createdAt.getTime(),
+        createdAt.getTime() - after.getTime(),
+      );
+      assert(
+        skewMs <= 1_000,
+        `createdAt is ${skewMs}ms outside the window the caller observed — it is coming from another clock`,
+      );
+    },
+  },
 ];
