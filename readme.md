@@ -215,6 +215,59 @@ A channel is usable when core carries it (`inApp`, `email`) or a plugin declares
 
 Declaring a channel nothing can carry **warns at startup** and reports `skipped: "channel-unavailable"` — deliberately distinct from `"no-channels"`, so a missing provider never looks like a user opt-out.
 
+## Upgrading
+
+A later version may add a column. How you pick it up depends on how you created the tables:
+
+| you bootstrapped with | to upgrade |
+| --- | --- |
+| `createSchema()` + drizzle-kit | `drizzle-kit` diffs it for you — nothing to do here |
+| `renderPostgresDdl()` | `planPostgresMigration()` — see below |
+| `createMongoIndexes()` | rerun it; `createIndex` is idempotent and additive |
+
+**`renderPostgresDdl` cannot upgrade you.** It emits `CREATE TABLE IF NOT EXISTS`, which is correct exactly once and a silent no-op afterwards. Rerunning it on an existing database does nothing at all.
+
+```ts
+import { INTROSPECT_SQL, planPostgresMigration, coreSchema } from "easy-notify/schema";
+
+const plan = await planPostgresMigration(
+  async () =>
+    (await sql.unsafe(INTROSPECT_SQL)).map((row) => ({
+      table: row.table_name,
+      column: row.column_name,
+      type: row.data_type,
+      nullable: row.is_nullable === "YES",
+    })),
+  coreSchema,
+);
+
+for (const statement of plan.statements) await sql.unsafe(statement);
+if (plan.unsupported.length) console.warn(plan.unsupported);
+```
+
+**Additive only, deliberately.** It adds missing columns and indexes, and creates tables that do not exist. It never drops a column, never changes a type, and never touches a column it did not declare — those land in `unsupported` as a message for a human, because they are destructive and context-dependent.
+
+One behaviour worth knowing: a **required** column with no default is added **nullable**, because `NOT NULL` would abort against existing rows. That is reported in `unsupported`; backfill it and `SET NOT NULL` yourself.
+
+Run the plugins' schemas the same way — `push({...}).schema`, `preferences().schema`.
+
+---
+
+## When something fails
+
+Delivery is at-least-once with five attempts and backoff, which means failures are quiet by design. To see them:
+
+```ts
+const failed = await notify.getFailedDeliveries({ since: new Date(Date.now() - 86_400_000) });
+// [{ id, notificationId, channel, attempts, lastError, updatedAt, ... }]
+```
+
+Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or an alert — otherwise the retry machinery is a black box, and a revoked API key looks exactly like nothing happening.
+
+`notify.healthCheck()` reports the delivery mode and warns when a mode needs a cron you have not mounted.
+
+---
+
 ## Security notes
 
 - **`session.getUserId` is mandatory.** There is no default and no dev bypass — an insecure default ships, a startup crash doesn't. Returning `null` yields 401; *throwing* yields 500, because a broken session store and an absent session are different bugs.
@@ -240,6 +293,8 @@ Declaring a channel nothing can carry **warns at startup** and reports `skipped:
 | ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
 | ✅ push verified against a live push service | Mozilla autopush, plus a cross-check against `http_ece` |
 | ✅ scoped plugin storage, so plugins own their tables | |
+| ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()` |
+| ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |
 | ⬜ realtime, batching | |
 | ⬜ Prisma / Kysely adapters, Vue / Svelte bindings | |
 
@@ -284,6 +339,12 @@ The push crypto is checked two ways. `web-push-reference.test.ts` decrypts our o
 
 ```bash
 EASY_NOTIFY_LIVE_PUSH=1 pnpm --filter easy-notify test web-push-live
+```
+
+The Resend provider is checked against Resend's real API too: the rejection paths need no credentials — a bogus key coming back as a structured 401 rather than a 400 is what proves the request shape is right. The delivery leg needs your own key:
+
+```bash
+RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>"   pnpm --filter easy-notify test resend-live
 ```
 
 ## Releasing
