@@ -6,7 +6,9 @@
   "type": "module",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -109,7 +111,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "type-budget": "node scripts/check-type-budget.mjs",
-    "check-node-floor": "node scripts/check-node-floor.mjs"
+    "check-node-floor": "node scripts/check-node-floor.mjs",
+    "prepack": "node scripts/copy-docs.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

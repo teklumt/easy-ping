@@ -7,3 +7,7 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+
+# Copied from the repo root on prepack so the npm page is not blank.
+packages/easy-notify/README.md
+packages/easy-notify/LICENSE
