@@ -53,10 +53,24 @@ document.querySelector("#disable").addEventListener("click", async () => {
   log(removed ? "push disabled" : "nothing was subscribed");
 });
 
-document.querySelector("#send").addEventListener("click", async () => {
-  const result = await (await withUser("/api/demo/send", { method: "POST" })).json();
+document.querySelector("#composer").addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const field = document.querySelector("#message");
+  const message = field.value.trim();
+
+  const result = await (
+    await withUser("/api/demo/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message }),
+    })
+  ).json();
+
   const channels = (result.notifications[0]?.deliveries ?? []).map((d) => d.channel);
-  log(`sent -> ${channels.join(", ") || "nothing"}`);
+  log(`sent "${message || "(default text)"}" -> ${channels.join(", ") || "nothing"}`);
+
+  field.value = "";
   await client.refresh();
 });
 

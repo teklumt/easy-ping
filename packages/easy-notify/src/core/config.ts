@@ -3,7 +3,7 @@ import type { NotificationDefinitions, PayloadOf } from "./definition";
 import type { Logger } from "./errors";
 import type { AnyPlugin } from "./plugin";
 import type { EmailProvider } from "./provider";
-import type { Channel, DeliveryMode, Recipient, SkipReason } from "./types";
+import type { Channel, DeliveryMode, DeliveryRecord, Recipient, SkipReason } from "./types";
 
 export type SessionConfig = {
   /** null yields 401; throwing yields 500. Deliberately distinct. */
@@ -94,4 +94,18 @@ export type EasyNotify<TDefs extends NotificationDefinitions> = {
 
   startWorker(options?: { intervalMs?: number; batchSize?: number }): Worker;
   healthCheck(): Promise<HealthReport>;
+
+  /**
+   * Deliveries that exhausted their attempts, newest first.
+   *
+   * The retry machinery is otherwise a black box: rows go quiet and the only
+   * way to ask what happened is SQL against tables the library owns. Wire this
+   * to an admin page or an alert.
+   */
+  getFailedDeliveries(options?: {
+    /** Defaults to the last 24 hours. */
+    since?: Date;
+    /** Defaults to 100. */
+    limit?: number;
+  }): Promise<readonly DeliveryRecord[]>;
 };

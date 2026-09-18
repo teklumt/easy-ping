@@ -19,6 +19,12 @@
         background: transparent; color: inherit; cursor: pointer;
       }
       button:hover { background: color-mix(in oklab, currentColor 8%, transparent); }
+      #composer { align-items: center; }
+      #message {
+        font: inherit; flex: 1 1 18rem; padding: .5rem .7rem; border-radius: .5rem;
+        border: 1px solid color-mix(in oklab, currentColor 25%, transparent);
+        background: transparent; color: inherit;
+      }
       #badge {
         display: inline-block; min-width: 1.5rem; padding: .1rem .4rem; text-align: center;
         border-radius: 1rem; background: #d33; color: #fff; font-size: .8rem;
@@ -42,9 +48,13 @@
     <div class="row">
       <button type="button" id="enable">Enable push</button>
       <button type="button" id="disable">Disable push</button>
-      <button type="button" id="send">Send a notification</button>
       <button type="button" id="seen">Mark seen</button>
     </div>
+
+    <form class="row" id="composer">
+      <input id="message" placeholder="Type a message, then press Send" autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
 
     <p>Unseen <span id="badge">0</span></p>
     <ul id="feed"></ul>

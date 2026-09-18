@@ -18,8 +18,12 @@ pnpm dev                                  # http://localhost:3210
 Set `DB_DRIVER=mongodb` in `.env` to run the exact same demo on MongoDB. The
 startup banner names whichever one it connected to.
 
-Then: **Enable push** → allow the permission prompt → **Send a notification**.
-An OS notification should appear even with the tab in the background.
+Then: **Enable push** → allow the permission prompt → type a message → **Send**.
+
+The message you typed arrives as a real OS notification, encrypted in transit
+and decrypted by the service worker in `public/sw.js`. Click into another
+window first — seeing it arrive while the tab is in the background is the whole
+point.
 
 Open `http://localhost:3210/?user=someone-else` in another window to act as a
 second person and confirm feeds stay separate.

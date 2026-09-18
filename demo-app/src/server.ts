@@ -86,11 +86,25 @@ const server = createServer(async (req, res) => {
   // Sends to whoever is asking, so one browser can notify itself.
   if (url.pathname === "/api/demo/send" && req.method === "POST") {
     const userId = req.headers["x-demo-user"];
+
+    const body = await new Promise<string>((resolve) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    });
+
+    let message = "";
+    try {
+      message = String(JSON.parse(body || "{}").message ?? "").slice(0, 200);
+    } catch {
+      // A malformed body just falls back to the default text.
+    }
+
     const result = await notify.send("demoPing", {
       to: typeof userId === "string" ? userId : "demo-user",
       payload: {
         title: "easy-notify",
-        body: `Sent at ${new Date().toLocaleTimeString()}`,
+        body: message || `Sent at ${new Date().toLocaleTimeString()}`,
       },
     });
 

@@ -217,6 +217,12 @@ export function easyNotify<TDefs extends NotificationDefinitions>(
 
     startWorker: (options) => runner.startWorker(options ?? {}),
 
+    getFailedDeliveries: (options = {}) =>
+      config.database.getFailedDeliveries({
+        since: options.since ?? new Date(Date.now() - 24 * 3600_000),
+        limit: Math.min(options.limit ?? 100, 1000),
+      }),
+
     healthCheck: async (): Promise<HealthReport> => {
       const cronMounted = Boolean(config.cron?.secret);
       return {
