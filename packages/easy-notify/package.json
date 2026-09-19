@@ -3,6 +3,39 @@
   "version": "0.0.0",
   "description": "Self-hosted, type-safe notifications for TypeScript apps. Your database, your users.",
   "license": "MIT",
+  "author": "Teklu Moges",
+  "homepage": "https://github.com/teklumt/easy-notify#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/teklumt/easy-notify.git",
+    "directory": "packages/easy-notify"
+  },
+  "bugs": {
+    "url": "https://github.com/teklumt/easy-notify/issues"
+  },
+  "keywords": [
+    "notifications",
+    "notification",
+    "in-app-notifications",
+    "notification-inbox",
+    "web-push",
+    "push-notifications",
+    "vapid",
+    "service-worker",
+    "email",
+    "transactional-email",
+    "resend",
+    "digest",
+    "notification-preferences",
+    "typescript",
+    "type-safe",
+    "self-hosted",
+    "drizzle",
+    "postgres",
+    "mongodb",
+    "react",
+    "nextjs"
+  ],
   "type": "module",
   "sideEffects": false,
   "files": [
