@@ -54,7 +54,14 @@ export type ClaimedDelivery = {
 
 export type DeliveryOutcome =
   | { result: "sent" }
-  | { result: "failed"; error: string; retryable: boolean };
+  | { result: "failed"; error: string; retryable: boolean }
+  /**
+   * Nothing to do, and nothing wrong. A channel whose preconditions are
+   * simply absent — push with no registered device, say — must not land in
+   * `getFailedDeliveries`, or the one view meant to surface real breakage
+   * fills up with people who never opted in. Terminal: never retried.
+   */
+  | { result: "skipped"; reason: string };
 
 export type DeliveryRelease = {
   id: string;

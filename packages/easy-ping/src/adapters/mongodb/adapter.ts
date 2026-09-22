@@ -342,6 +342,7 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
 
       for (const { id, outcome, nextAttemptAt } of releases) {
         const failed = outcome.result === "failed";
+        const skipped = outcome.result === "skipped";
         const retryable = failed && outcome.retryable;
 
         // An aggregation-pipeline update so the terminal-vs-retry decision
@@ -358,10 +359,16 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
                       "failed",
                     ],
                   }
-                : "sent",
+                : skipped
+                  ? "skipped"
+                  : "sent",
               // $literal: an error message starting with "$" would otherwise
               // be read as a field path.
-              lastError: failed ? { $literal: outcome.error.slice(0, 2000) } : null,
+              lastError: failed
+                ? { $literal: outcome.error.slice(0, 2000) }
+                : skipped
+                  ? { $literal: outcome.reason.slice(0, 2000) }
+                  : null,
               notBefore: nextAttemptAt ?? "$notBefore",
               // Written unconditionally: if the lease expired and another
               // worker re-sent, the duplicate already happened and the true

@@ -22,6 +22,8 @@ export type SweepResult = {
   claimed: number;
   sent: number;
   failed: number;
+  /** Deliveries that had nothing to do. Not errors; see DeliveryOutcome. */
+  skipped: number;
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -153,7 +155,7 @@ export function createRunner(deps: RunnerDeps) {
 
   async function notifyAfterDeliver(delivery: ClaimedDelivery, outcome: DeliveryOutcome) {
     const isTerminal =
-      outcome.result === "sent" ||
+      outcome.result !== "failed" ||
       !outcome.retryable ||
       delivery.attempts + 1 >= delivery.maxAttempts;
 
@@ -194,7 +196,7 @@ export function createRunner(deps: RunnerDeps) {
       ...(options.ids ? { ids: options.ids } : {}),
     });
 
-    if (claimed.length === 0) return { claimed: 0, sent: 0, failed: 0 };
+    if (claimed.length === 0) return { claimed: 0, sent: 0, failed: 0, skipped: 0 };
 
     const userIds = [...new Set(claimed.map((row) => row.notification.userId))];
     const recipients = await deps.getRecipients(userIds);
@@ -203,11 +205,13 @@ export function createRunner(deps: RunnerDeps) {
     const releases: DeliveryRelease[] = [];
     let sent = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const delivery of claimed) {
       const outcome = await deliverOne(delivery, byUserId.get(delivery.notification.userId));
 
       if (outcome.result === "sent") sent += 1;
+      else if (outcome.result === "skipped") skipped += 1;
       else failed += 1;
 
       releases.push({
@@ -223,7 +227,7 @@ export function createRunner(deps: RunnerDeps) {
     }
 
     await deps.adapter.releaseDeliveries(releases);
-    return { claimed: claimed.length, sent, failed };
+    return { claimed: claimed.length, sent, failed, skipped };
   }
 
   /** Drains until empty. Pass `ids` to bound it to one send. */
@@ -231,13 +235,14 @@ export function createRunner(deps: RunnerDeps) {
     options: { maxSweeps?: number; ids?: readonly string[] } = {},
   ): Promise<SweepResult> {
     const maxSweeps = options.maxSweeps ?? 50;
-    const total: SweepResult = { claimed: 0, sent: 0, failed: 0 };
+    const total: SweepResult = { claimed: 0, sent: 0, failed: 0, skipped: 0 };
 
     for (let sweep = 0; sweep < maxSweeps; sweep += 1) {
       const result = await runOnce(options.ids ? { ids: options.ids } : {});
       total.claimed += result.claimed;
       total.sent += result.sent;
       total.failed += result.failed;
+      total.skipped += result.skipped;
       if (result.claimed === 0) break;
     }
 

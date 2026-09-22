@@ -253,7 +253,7 @@ describe.skipIf(!available)("send pipeline and delivery runner", () => {
       await runSend("inAppOnly", { to: "u1", payload: {} }, deps());
       const result = await createRunner(runnerDeps({ inApp: { enabled: true } })).runOnce();
 
-      expect(result).toEqual({ claimed: 1, sent: 1, failed: 0 });
+      expect(result).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0 });
     });
 
     it("sends email with the delivery id as the idempotency key", async () => {

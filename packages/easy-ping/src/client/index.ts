@@ -82,10 +82,16 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   async function refresh(): Promise<void> {
     const startedAt = generation;
 
-    const [page, count] = await Promise.all([
-      request<{ notifications: NotificationView[]; nextCursor: string | null }>(`/?limit=${limit}`),
-      request<{ unseen: number }>("/count"),
-    ]);
+    // One request, not two. The feed carries unseenCount for a first page,
+    // which is every poll. A server too old to send it still works: the
+    // fallback asks /count the way this always used to.
+    const page = await request<{
+      notifications: NotificationView[];
+      nextCursor: string | null;
+      unseenCount?: number;
+    }>(`/?limit=${limit}`);
+
+    const unseenCount = page.unseenCount ?? (await request<{ unseen: number }>("/count")).unseen;
 
     // A mutation landed while this was in flight, so the response is already
     // stale. Dropping it is correct: the mutation's own optimistic state is
@@ -95,7 +101,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
     set({
       notifications: page.notifications,
       nextCursor: page.nextCursor,
-      unseenCount: count.unseen,
+      unseenCount,
       isLoading: false,
       error: null,
     });

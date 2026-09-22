@@ -1,5 +1,10 @@
 import type { DeliveryOutcome } from "../../core/adapter";
-import type { DeliverContext, EasyPingPlugin, PluginInitContext } from "../../core/plugin";
+import type {
+  DeliverContext,
+  EasyPingPlugin,
+  PluginInitContext,
+  SchemaDeclaration,
+} from "../../core/plugin";
 
 const DEVICE = "notification_push_device";
 
@@ -54,6 +59,36 @@ export type PushOptions = {
  * immediately: an unpruned registry accumulates dead subscriptions forever and
  * every send slows down behind them.
  */
+/**
+ * The tables this plugin owns, as a standalone value.
+ *
+ * Exported separately from `push()` so DDL can be rendered without building a
+ * plugin instance — otherwise creating the tables means inventing a provider
+ * and a render function you never intend to call.
+ */
+export const pushSchema = {
+  pushDevice: {
+    tableName: DEVICE,
+    fields: {
+      id: { type: "string", required: true },
+      userId: { type: "string", required: true },
+      endpoint: { type: "string", required: true },
+      p256dh: { type: "string", required: true },
+      auth: { type: "string", required: true },
+      userAgent: { type: "string" },
+      createdAt: { type: "date", required: true, defaultNow: true },
+      lastSeenAt: { type: "date", required: true, defaultNow: true },
+    },
+    primaryKey: ["id"],
+    indexes: [
+      { on: ["userId"], name: "push_device_user_idx" },
+      // One row per endpoint: re-registering the same browser must update,
+      // not duplicate, or every send goes out N times to one device.
+      { on: ["endpoint"], unique: true, name: "push_device_endpoint_idx" },
+    ],
+  },
+} as const satisfies SchemaDeclaration;
+
 export function push(options: PushOptions): EasyPingPlugin<"push"> {
   let ctx: PluginInitContext;
   const staleAfterDays = options.staleAfterDays ?? 180;
@@ -66,28 +101,7 @@ export function push(options: PushOptions): EasyPingPlugin<"push"> {
       ctx = context;
     },
 
-    schema: {
-      pushDevice: {
-        tableName: DEVICE,
-        fields: {
-          id: { type: "string", required: true },
-          userId: { type: "string", required: true },
-          endpoint: { type: "string", required: true },
-          p256dh: { type: "string", required: true },
-          auth: { type: "string", required: true },
-          userAgent: { type: "string" },
-          createdAt: { type: "date", required: true, defaultNow: true },
-          lastSeenAt: { type: "date", required: true, defaultNow: true },
-        },
-        primaryKey: ["id"],
-        indexes: [
-          { on: ["userId"], name: "push_device_user_idx" },
-          // One row per endpoint: re-registering the same browser must update,
-          // not duplicate, or every send goes out N times to one device.
-          { on: ["endpoint"], unique: true, name: "push_device_endpoint_idx" },
-        ],
-      },
-    },
+    schema: pushSchema,
 
     hooks: {
       deliver: async (context: DeliverContext): Promise<DeliveryOutcome> => {
@@ -96,7 +110,8 @@ export function push(options: PushOptions): EasyPingPlugin<"push"> {
         });
 
         if (devices.length === 0) {
-          return { result: "failed", error: "no registered devices", retryable: false };
+          // Not a failure: this person has simply not enabled push anywhere.
+          return { result: "skipped", reason: "no registered devices" };
         }
 
         const content = options.render({
