@@ -21,6 +21,7 @@ export default defineConfig([
       node: "src/node/index.ts",
       "adapters/drizzle": "src/adapters/drizzle/index.ts",
       "adapters/mongodb": "src/adapters/mongodb/index.ts",
+      "adapters/postgres": "src/adapters/postgres/index.ts",
       schema: "src/schema/index.ts",
       testing: "src/testing/index.ts",
       "providers/resend": "src/providers/resend/index.ts",

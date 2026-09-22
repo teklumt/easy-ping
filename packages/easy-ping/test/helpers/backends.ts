@@ -4,6 +4,7 @@ import postgres from "postgres";
 import { drizzleAdapter } from "../../src/adapters/drizzle/adapter";
 import { mongoAdapter } from "../../src/adapters/mongodb/adapter";
 import { createMongoIndexes, createPluginIndexes } from "../../src/adapters/mongodb/indexes";
+import { postgresAdapter } from "../../src/adapters/postgres/adapter";
 import type { DatabaseAdapter } from "../../src/core/adapter";
 import type { SchemaDeclaration } from "../../src/core/plugin";
 import { coreSchema } from "../../src/schema/declaration";
@@ -38,8 +39,16 @@ export type BackendFactory = {
   create: (namespace: string) => Promise<Backend>;
 };
 
-async function createPostgresBackend(namespace: string): Promise<Backend> {
-  const schema = `test_${namespace}`;
+/** Builds the adapter under test from a live postgres.js client. */
+type PostgresAdapterFactory = (client: ReturnType<typeof postgres>) => DatabaseAdapter;
+
+async function createPostgresBackend(
+  namespace: string,
+  makeAdapter: PostgresAdapterFactory,
+): Promise<Backend> {
+  // Backend names carry hyphens ("postgres-raw"), which are a syntax error in
+  // an unquoted identifier.
+  const schema = `test_${namespace.replace(/\W/g, "_")}`;
 
   const bootstrap = postgres(TEST_DATABASE_URL, { max: 1, onnotice: () => {} });
   await bootstrap.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
@@ -59,7 +68,7 @@ async function createPostgresBackend(namespace: string): Promise<Backend> {
   await applySchema(coreSchema);
 
   return {
-    adapter: drizzleAdapter(drizzle(client)),
+    adapter: makeAdapter(client),
     applySchema,
     truncate: async () => {
       // Discovered rather than listed: a plugin's tables must be cleared too,
@@ -106,7 +115,7 @@ async function createMongoBackend(namespace: string): Promise<Backend> {
   const client = new MongoClient(TEST_MONGO_URL, { serverSelectionTimeoutMS: 5000 });
   await client.connect();
 
-  const db = client.db(`easyping_test_${namespace}`);
+  const db = client.db(`easyping_test_${namespace.replace(/\W/g, "_")}`);
   await db.dropDatabase();
   await createMongoIndexes(db);
 
@@ -135,13 +144,51 @@ async function createMongoBackend(namespace: string): Promise<Backend> {
   };
 }
 
+/** Drizzle used purely as a SQL builder — the original adapter. */
+const withDrizzle: PostgresAdapterFactory = (client) => drizzleAdapter(drizzle(client));
+
+/**
+ * The same database with no ORM at all: postgres.js's `unsafe(text, params)`
+ * is exactly the `SqlQuery` contract, and `begin` supplies the transaction.
+ * If this passes the same 13 cases as the Drizzle backend, the ORM genuinely
+ * was not carrying any weight.
+ */
+const withRawSql: PostgresAdapterFactory = (client) =>
+  postgresAdapter(
+    async (text, params) =>
+      (await client.unsafe(text, [...params] as never[])) as unknown as Record<string, unknown>[],
+    {
+      transaction: (fn) =>
+        client.begin((tx) =>
+          fn(
+            async (text, params) =>
+              (await tx.unsafe(text, [...params] as never[])) as unknown as Record<
+                string,
+                unknown
+              >[],
+          ),
+        ) as never,
+    },
+  );
+
 /**
  * The backends this machine can actually reach. Empty in CI is impossible —
  * both reachability probes throw there rather than quietly skipping.
  */
 export const availableBackends: readonly BackendFactory[] = [
   ...((await postgresReachable())
-    ? [{ name: "postgres", rowLock: true, create: createPostgresBackend }]
+    ? [
+        {
+          name: "postgres-drizzle",
+          rowLock: true,
+          create: (namespace: string) => createPostgresBackend(namespace, withDrizzle),
+        },
+        {
+          name: "postgres-raw",
+          rowLock: true,
+          create: (namespace: string) => createPostgresBackend(namespace, withRawSql),
+        },
+      ]
     : []),
   ...((await mongoReachable())
     ? [{ name: "mongodb", rowLock: false, create: createMongoBackend }]
