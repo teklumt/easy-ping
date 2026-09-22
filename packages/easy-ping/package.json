@@ -1,6 +1,6 @@
 {
   "name": "easy-ping",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Self-hosted, type-safe notifications for TypeScript apps. Your database, your users.",
   "license": "MIT",
   "author": "Teklu Moges",

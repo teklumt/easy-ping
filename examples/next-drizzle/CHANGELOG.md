@@ -1,5 +1,12 @@
 # example-next-drizzle
 
+## 0.0.3
+
+### Patch Changes
+
+- Updated dependencies [699832c]
+  - easy-ping@0.3.0
+
 ## 0.0.2
 
 ### Patch Changes
