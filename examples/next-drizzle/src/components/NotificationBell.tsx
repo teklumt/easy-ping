@@ -1,6 +1,6 @@
 "use client";
 
-import { useNotifications } from "easy-notify/react";
+import { useNotifications } from "easy-ping/react";
 import { useState } from "react";
 
 export function NotificationBell() {

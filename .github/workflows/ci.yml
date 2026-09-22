@@ -70,4 +70,4 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      - run: node packages/easy-notify/scripts/check-node-floor.mjs
+      - run: node packages/easy-ping/scripts/check-node-floor.mjs

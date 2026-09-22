@@ -1,5 +1,5 @@
-import { isPushSupported, subscribeToPush, unsubscribeFromPush } from "./easy-notify-browser.js";
-import { createNotifyClient } from "./easy-notify-client.js";
+import { isPushSupported, subscribeToPush, unsubscribeFromPush } from "./easy-ping-browser.js";
+import { createNotifyClient } from "./easy-ping-client.js";
 
 const userId = new URLSearchParams(location.search).get("user") ?? "demo-user";
 document.querySelector("#who").textContent = userId;

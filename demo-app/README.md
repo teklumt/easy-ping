@@ -1,4 +1,4 @@
-# easy-notify demo
+# easy-ping demo
 
 A real server, a real browser, a real push notification. This is where the
 browser half of web push lives — the part the library cannot own for you.
@@ -7,7 +7,7 @@ browser half of web push lives — the part the library cannot own for you.
 
 ```bash
 docker compose up -d                      # Postgres + MongoDB, from the repo root
-pnpm --filter easy-notify build           # the demo serves the built bundles
+pnpm --filter easy-ping build           # the demo serves the built bundles
 
 cd demo-app
 cp .env.example .env
@@ -46,7 +46,7 @@ Three pieces, none of which the library can supply for you:
 
 1. **A service worker** (`public/sw.js`) with a `push` listener. Without one
    the browser shows its own generic "site updated in the background" text.
-2. **A subscribe call** — `subscribeToPush()` from `easy-notify/browser` does
+2. **A subscribe call** — `subscribeToPush()` from `easy-ping/browser` does
    registration, permission, `pushManager.subscribe`, and the POST to
    `/push/devices`.
 3. **A VAPID public key** the page can read, served here by `/api/demo/config`.
@@ -66,8 +66,8 @@ Three pieces, none of which the library can supply for you:
 start, open Docker Desktop and clear whatever it is waiting on (sign-in,
 licence, update).
 
-**`/easy-notify-browser.js` returns 500** — the bundles are missing. Run
-`pnpm --filter easy-notify build`; the demo serves them straight out of the
+**`/easy-ping-browser.js` returns 500** — the bundles are missing. Run
+`pnpm --filter easy-ping build`; the demo serves them straight out of the
 workspace package so a rebuild is picked up without copying.
 
 **"Enable push" does nothing** — the notification permission for `localhost`

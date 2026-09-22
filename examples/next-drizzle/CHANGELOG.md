@@ -5,4 +5,4 @@
 ### Patch Changes
 
 - Updated dependencies [183de60]
-  - easy-notify@0.1.0
+  - easy-ping@0.1.0

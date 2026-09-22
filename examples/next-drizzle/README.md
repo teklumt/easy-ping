@@ -1,6 +1,6 @@
 # Example — Next.js + Drizzle
 
-A complete easy-notify wiring: config, mounted endpoints, a send site, and a bell component.
+A complete easy-ping wiring: config, mounted endpoints, a send site, and a bell component.
 
 This example is **typechecked in CI against the built package**, so it cannot drift from the real API. That check has already caught four defects the unit tests missed — a missing `drizzleAdapter` export, a missing `react.d.ts`, and a type-variance bug that made every schema-typed definition fail to assign.
 
@@ -8,7 +8,7 @@ This example is **typechecked in CI against the built package**, so it cannot dr
 
 | | |
 | --- | --- |
-| `src/db/schema.ts` | your `user` table alongside easy-notify's three |
+| `src/db/schema.ts` | your `user` table alongside easy-ping's three |
 | `src/notify.ts` | the whole configuration |
 | `src/session.ts` | stand-in for your auth library |
 | `src/app/api/notifications/[...notify]/route.ts` | mounts every endpoint in one line |

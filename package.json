@@ -1,5 +1,5 @@
 {
-  "name": "easy-notify-monorepo",
+  "name": "easy-ping-monorepo",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.5.1",

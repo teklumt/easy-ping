@@ -50,7 +50,7 @@ jobs:
       # The first release must therefore be published by hand:
       #
       #   npm login
-      #   pnpm --filter easy-notify publish --access public
+      #   pnpm --filter easy-ping publish --access public
       #
       # then enable trusted publishing on npmjs.com for this repo and workflow
       # and re-add `publish: pnpm changeset publish` below.

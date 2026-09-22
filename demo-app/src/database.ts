@@ -1,12 +1,8 @@
 import { drizzle } from "drizzle-orm/postgres-js";
-import type { DatabaseAdapter, SchemaDeclaration } from "easy-notify";
-import { drizzleAdapter } from "easy-notify/adapters/drizzle";
-import {
-  createMongoIndexes,
-  createPluginIndexes,
-  mongoAdapter,
-} from "easy-notify/adapters/mongodb";
-import { coreSchema, renderPostgresDdl } from "easy-notify/schema";
+import type { DatabaseAdapter, SchemaDeclaration } from "easy-ping";
+import { drizzleAdapter } from "easy-ping/adapters/drizzle";
+import { createMongoIndexes, createPluginIndexes, mongoAdapter } from "easy-ping/adapters/mongodb";
+import { coreSchema, renderPostgresDdl } from "easy-ping/schema";
 import { MongoClient } from "mongodb";
 import postgres from "postgres";
 
@@ -30,7 +26,7 @@ export async function connect(
       fail(`MongoDB at ${redact(url)}`, error);
     }
 
-    const db = client.db(process.env.MONGO_DB ?? "easynotify_demo");
+    const db = client.db(process.env.MONGO_DB ?? "easyping_demo");
     await createMongoIndexes(db);
     for (const schema of pluginSchemas) await createPluginIndexes(db, schema);
 
@@ -40,7 +36,7 @@ export async function connect(
   }
 
   const url =
-    process.env.DATABASE_URL ?? "postgres://easynotify:easynotify@localhost:54329/easynotify_test";
+    process.env.DATABASE_URL ?? "postgres://easyping:easyping@localhost:54329/easyping_test";
   const sql = postgres(url, { onnotice: () => {} });
 
   try {

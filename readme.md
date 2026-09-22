@@ -1,4 +1,4 @@
-# easy-notify
+# easy-ping
 
 **Own your notifications.** Your database, your users, no per-notification pricing.
 
@@ -12,7 +12,7 @@ A framework-agnostic, type-safe, self-hosted notifications library for TypeScrip
 
 Every app past the weekend-project stage needs a notification bell, transactional email, and user preferences. The options are a platform you deploy (Novu), a SaaS you rent per notification (Knock, Courier), a workflow platform plus your own table (Inngest + Resend), or hand-rolling it badly.
 
-easy-notify runs **inside your app**, stores notifications in **your database**, and never charges per send.
+easy-ping runs **inside your app**, stores notifications in **your database**, and never charges per send.
 
 **Scale target:** thousands to low-millions of notifications per month. Not Slack-scale fan-out. Every "no queue required" decision below follows from that.
 
@@ -23,14 +23,14 @@ easy-notify runs **inside your app**, stores notifications in **your database**,
 ### 1. Install
 
 ```bash
-pnpm add easy-notify drizzle-orm postgres zod
+pnpm add easy-ping drizzle-orm postgres zod
 ```
 
 ### 2. Create the tables
 
 ```ts
 // db/schema.ts
-import { createSchema } from "easy-notify/adapters/drizzle";
+import { createSchema } from "easy-ping/adapters/drizzle";
 
 export const { notification, notificationDelivery, notificationPreference } = createSchema();
 ```
@@ -38,7 +38,7 @@ export const { notification, notificationDelivery, notificationPreference } = cr
 Push them with `drizzle-kit`, or generate raw SQL:
 
 ```ts
-import { coreSchema, renderPostgresDdl } from "easy-notify/schema";
+import { coreSchema, renderPostgresDdl } from "easy-ping/schema";
 
 for (const statement of renderPostgresDdl(coreSchema)) await sql.unsafe(statement);
 ```
@@ -47,11 +47,11 @@ for (const statement of renderPostgresDdl(coreSchema)) await sql.unsafe(statemen
 <summary>On MongoDB instead</summary>
 
 ```bash
-pnpm add easy-notify mongodb zod
+pnpm add easy-ping mongodb zod
 ```
 
 ```ts
-import { createMongoIndexes, mongoAdapter } from "easy-notify/adapters/mongodb";
+import { createMongoIndexes, mongoAdapter } from "easy-ping/adapters/mongodb";
 
 const client = new MongoClient(process.env.MONGO_URL!);
 await client.connect();
@@ -73,16 +73,16 @@ Everything after this point is identical.
 
 ```ts
 // notify.ts
-import { defineNotification, easyNotify } from "easy-notify";
-import { drizzleAdapter } from "easy-notify/adapters/drizzle";
-import { resend } from "easy-notify/providers/resend";
+import { defineNotification, easyPing } from "easy-ping";
+import { drizzleAdapter } from "easy-ping/adapters/drizzle";
+import { resend } from "easy-ping/providers/resend";
 import { after } from "next/server";
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "./auth";
 import { db, users } from "./db";
 
-export const notify = easyNotify({
+export const notify = easyPing({
   database: drizzleAdapter(db),
 
   secret: process.env.NOTIFY_SECRET!,
@@ -146,7 +146,7 @@ await notify.send("commentReply", {
 
 ```tsx
 "use client";
-import { useNotifications } from "easy-notify/react";
+import { useNotifications } from "easy-ping/react";
 
 export function Bell() {
   const { notifications, unseenCount, markAsRead, markSeen } = useNotifications();
@@ -230,7 +230,7 @@ A later version may add a column. How you pick it up depends on how you created 
 **`renderPostgresDdl` cannot upgrade you.** It emits `CREATE TABLE IF NOT EXISTS`, which is correct exactly once and a silent no-op afterwards. Rerunning it on an existing database does nothing at all.
 
 ```ts
-import { INTROSPECT_SQL, planPostgresMigration, coreSchema } from "easy-notify/schema";
+import { INTROSPECT_SQL, planPostgresMigration, coreSchema } from "easy-ping/schema";
 
 const plan = await planPostgresMigration(
   async () =>
@@ -307,7 +307,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 The one operation with no equivalent in other libraries is atomic claiming — without it, two concurrent sweeps send the same email twice. Verify yours:
 
 ```ts
-import { adapterConformanceCases } from "easy-notify/testing";
+import { adapterConformanceCases } from "easy-ping/testing";
 
 for (const testCase of adapterConformanceCases) {
   it(testCase.name, () => testCase.run({ adapter, reset, setAttempts, lockRow }));
@@ -340,18 +340,18 @@ Database tests skip locally when a database is unreachable, and **fail** in CI �
 The push crypto is checked two ways. `web-push-reference.test.ts` decrypts our output with `http_ece` — the library `web-push` npm uses — because a decryptor written from the same RFC would share any misreading and agree with itself. `web-push-live.test.ts` then sends through Mozilla's production push service for real; it is opt-in so CI never goes red because someone else's service is having a bad afternoon:
 
 ```bash
-EASY_NOTIFY_LIVE_PUSH=1 pnpm --filter easy-notify test web-push-live
+EASY_PING_LIVE_PUSH=1 pnpm --filter easy-ping test web-push-live
 ```
 
 The Resend provider is checked against Resend's real API too: the rejection paths need no credentials — a bogus key coming back as a structured 401 rather than a 400 is what proves the request shape is right. The delivery leg needs your own key:
 
 ```bash
-RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>"   pnpm --filter easy-notify test resend-live
+RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>"   pnpm --filter easy-ping test resend-live
 ```
 
 ## Releasing
 
-Nothing is on npm yet. The name `easy-notify` is unclaimed.
+Nothing is on npm yet. The name `easy-ping` is unclaimed.
 
 The Release workflow only maintains the version PR; it does **not** publish. npm trusted publishing (OIDC) cannot create a package that does not exist — a trusted publisher is configured against an existing package, so the first `PUT` is rejected as `E404`, which reads like "name taken" and is not.
 
@@ -364,7 +364,7 @@ pnpm changeset version
 
 # 2. publish once, by hand
 npm login
-pnpm --filter easy-notify publish --access public
+pnpm --filter easy-ping publish --access public
 ```
 
 Then enable trusted publishing on npmjs.com for this repo and this workflow, and re-add `publish: pnpm changeset publish` to `.github/workflows/release.yml`. Every release after that is automatic.

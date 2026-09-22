@@ -26,9 +26,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(postgres@3.4.9)
-      easy-notify:
+      easy-ping:
         specifier: workspace:*
-        version: link:../packages/easy-notify
+        version: link:../packages/easy-ping
       mongodb:
         specifier: ^7.6.0
         version: 7.6.0
@@ -48,9 +48,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(postgres@3.4.9)
-      easy-notify:
+      easy-ping:
         specifier: workspace:*
-        version: link:../../packages/easy-notify
+        version: link:../../packages/easy-ping
       next:
         specifier: ^15.1.0
         version: 15.5.22(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -71,7 +71,7 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
-  packages/easy-notify:
+  packages/easy-ping:
     dependencies:
       '@standard-schema/spec':
         specifier: ^1.1.0

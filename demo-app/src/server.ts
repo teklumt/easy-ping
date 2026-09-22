@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
-import { defineNotification, easyNotify } from "easy-notify";
-import { toNodeHandler } from "easy-notify/node";
-import { preferences } from "easy-notify/plugins/preferences";
-import { push } from "easy-notify/plugins/push";
-import { webPush } from "easy-notify/providers/web-push";
+import { defineNotification, easyPing } from "easy-ping";
+import { toNodeHandler } from "easy-ping/node";
+import { preferences } from "easy-ping/plugins/preferences";
+import { push } from "easy-ping/plugins/push";
+import { webPush } from "easy-ping/providers/web-push";
 import { connect, type Driver } from "./database.ts";
 
 const env = (key: string, fallback?: string) => {
@@ -40,7 +40,7 @@ const { adapter, label } = await connect(DB_DRIVER, [
   preferencesPlugin.schema ?? {},
 ]);
 
-const notify = easyNotify({
+const notify = easyPing({
   database: adapter,
   secret: env("NOTIFY_SECRET", "demo-signing-secret"),
   cron: { secret: env("NOTIFY_CRON_SECRET", "demo-cron-secret") },
@@ -103,7 +103,7 @@ const server = createServer(async (req, res) => {
     const result = await notify.send("demoPing", {
       to: typeof userId === "string" ? userId : "demo-user",
       payload: {
-        title: "easy-notify",
+        title: "easy-ping",
         body: message || `Sent at ${new Date().toLocaleTimeString()}`,
       },
     });
@@ -119,19 +119,19 @@ const server = createServer(async (req, res) => {
 
   // Served straight out of the workspace package so they track a rebuild.
   const BUNDLES: Record<string, string> = {
-    "/easy-notify-browser.js": "browser.js",
-    "/easy-notify-client.js": "client.js",
+    "/easy-ping-browser.js": "browser.js",
+    "/easy-ping-client.js": "client.js",
   };
 
   const bundle = BUNDLES[url.pathname];
   if (bundle) {
-    const path = join(import.meta.dirname, "..", "node_modules", "easy-notify", "dist", bundle);
+    const path = join(import.meta.dirname, "..", "node_modules", "easy-ping", "dist", bundle);
     try {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
       return void res.end(await readFile(path));
     } catch {
       res.writeHead(500, { "content-type": "text/plain" });
-      return void res.end(`${bundle} is missing — run \`pnpm --filter easy-notify build\` first`);
+      return void res.end(`${bundle} is missing — run \`pnpm --filter easy-ping build\` first`);
     }
   }
 
@@ -150,6 +150,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(3210, () => {
-  console.log("\n  easy-notify demo -> http://localhost:3210");
+  console.log("\n  easy-ping demo -> http://localhost:3210");
   console.log(`  database: ${label}\n`);
 });

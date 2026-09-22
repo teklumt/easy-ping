@@ -1,13 +1,13 @@
 import { inArray } from "drizzle-orm";
-import { defineNotification, easyNotify } from "easy-notify";
-import { drizzleAdapter } from "easy-notify/adapters/drizzle";
-import { resend } from "easy-notify/providers/resend";
+import { defineNotification, easyPing } from "easy-ping";
+import { drizzleAdapter } from "easy-ping/adapters/drizzle";
+import { resend } from "easy-ping/providers/resend";
 import { after } from "next/server";
 import { z } from "zod";
 import { db, schema } from "./db";
 import { getSession } from "./session";
 
-export const notify = easyNotify({
+export const notify = easyPing({
   database: drizzleAdapter(db),
 
   // Signs unsubscribe links and other session-less URLs.

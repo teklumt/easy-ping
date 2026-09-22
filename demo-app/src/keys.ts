@@ -1,4 +1,4 @@
-import { generateVapidKeys } from "easy-notify/providers/web-push";
+import { generateVapidKeys } from "easy-ping/providers/web-push";
 
 const keys = await generateVapidKeys();
 
