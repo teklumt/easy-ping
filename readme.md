@@ -177,7 +177,9 @@ Every 1–5 minutes, from Vercel Cron, GitHub Actions, or anything else. This is
 
 ## How delivery works
 
-`send()` validates, resolves recipients, runs hooks, writes the notification and delivery rows in one transaction, and returns. **It never waits for Resend.** A 200–800ms provider round trip has no business on a comment POST.
+`send()` validates, resolves recipients, runs hooks, and writes the notification and delivery rows in one transaction. **Committing those rows is the only thing it has to do** — a 200–800ms provider round trip has no business on a comment POST.
+
+What happens next is `delivery.mode`'s job. In `deferred`, `worker` and `cron`, `send()` returns as soon as the rows are committed and never waits on a provider. `inline` is the exception: it awaits that send's own deliveries before resolving, which is the tradeoff you accept for the simplest possible setup.
 
 Delivery then happens according to `delivery.mode`:
 
