@@ -1,25 +1,65 @@
+<div align="center">
+
 # easy-ping
+
+**Own your notifications.**
+In-app inbox, transactional email and web push — running inside your app, stored in your
+database, with no per-notification bill.
 
 [![npm](https://img.shields.io/npm/v/easy-ping?color=%23e0362a&label=npm)](https://www.npmjs.com/package/easy-ping)
 [![install size](https://packagephobia.com/badge?p=easy-ping)](https://packagephobia.com/result?p=easy-ping)
 [![node](https://img.shields.io/node/v/easy-ping)](https://www.npmjs.com/package/easy-ping)
 [![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
 
-**Own your notifications.** Your database, your users, no per-notification pricing.
+[Documentation](https://easy-notify-website.vercel.app) · [Quickstart](https://easy-notify-website.vercel.app/docs/quickstart) · [Changelog](https://easy-notify-website.vercel.app/docs/changelog) · [AI context](https://easy-notify-website.vercel.app/docs/ai-assistant)
 
-A framework-agnostic, type-safe, self-hosted notifications library for TypeScript — in-app inbox, transactional email, and a plugin system for the rest.
+</div>
 
-> **Status: published, pre-1.0.** The core pipeline, all three adapters (Postgres through any driver, Postgres via Drizzle, and MongoDB), the React client, and the preferences, digests and push plugins all work and are covered by tests against real databases. Web push is verified end to end against Mozilla's production push service and cross-checked against `http_ece`. Realtime and batching are not built, and the Resend provider has still only been exercised against a stub. Minor versions may still move APIs before 1.0.
+---
+
+```ts
+await notify.send("commentReply", {
+  to: threadOwnerId,
+  payload: { authorName: "Dana", commentId: "c_123" },  // typed from your schema
+  dedupeKey: `commentReply:c_123:${threadOwnerId}`,      // optional, makes retries safe
+});
+```
+
+```tsx
+const { notifications, unseenCount, markSeen, markAsRead } = useNotifications();
+```
+
+One config file, one `send()`, one hook. No queue, no worker service, no vendor.
 
 ---
 
 ## Why
 
-Every app past the weekend-project stage needs a notification bell, transactional email, and user preferences. The options are a platform you deploy (Novu), a SaaS you rent per notification (Knock, Courier), a workflow platform plus your own table (Inngest + Resend), or hand-rolling it badly.
+Every app past the weekend-project stage needs a notification bell, transactional email and user
+preferences. The alternatives are a platform you deploy, a SaaS you rent per notification, or
+hand-rolling it badly.
 
-easy-ping runs **inside your app**, stores notifications in **your database**, and never charges per send.
+|  | easy-ping | Novu (self-hosted) | Knock · Courier |
+| --- | --- | --- | --- |
+| **What you deploy** | nothing, it is a dependency | four services | nothing, it is their cloud |
+| **Infrastructure it adds** | none | MongoDB, Redis, S3 | none |
+| **Where notifications live** | your Postgres or MongoDB | Novu's MongoDB | theirs |
+| **Cost per notification** | none | none, you pay for servers | metered per send |
+| **License** | MIT, all of it | MIT core, commercial modules | proprietary |
+| **Visual workflow editor** | **no**, a notification is code | yes | yes |
+| **Channels out of the box** | **in-app, email, web push** | dozens | dozens |
 
-**Scale target:** thousands to low-millions of notifications per month. Not Slack-scale fan-out. Every "no queue required" decision below follows from that.
+The last two rows are the trade. If you need a workflow editor a non-developer can edit, use one
+of the others — they are good tools solving a bigger problem.
+
+**Scale target:** thousands to low-millions of notifications per month. Not Slack-scale fan-out.
+Every "no queue required" decision below follows from that.
+
+> **Status: published, pre-1.0.** The core pipeline, all three adapters, the React client and the
+> preferences, digests and push plugins are covered by tests against real databases. Web push is
+> verified end to end against Mozilla's production push service and cross-checked against
+> `http_ece`. Realtime and batching are not built, and the Resend provider has only been exercised
+> against a stub. Minor versions may still move APIs before 1.0.
 
 ---
 
@@ -28,10 +68,33 @@ easy-ping runs **inside your app**, stores notifications in **your database**, a
 ### 1. Install
 
 ```bash
-pnpm add easy-ping drizzle-orm postgres zod
+pnpm add easy-ping pg zod
 ```
 
 ### 2. Create the tables
+
+No ORM required. The whole database contract is one function: run a parameterised statement,
+return rows.
+
+```ts
+import { createPostgresTables, pgTransaction, postgresAdapter } from "easy-ping/adapters/postgres";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const query = async (text, params) => (await pool.query(text, params)).rows;
+
+// Renders the DDL from the installed version's own schema, so the tables
+// cannot drift from the package. Every statement is IF NOT EXISTS.
+await createPostgresTables(query);
+
+export const database = postgresAdapter(query, { transaction: pgTransaction(pool) });
+```
+
+Anything that can run a statement works: `pg`, `postgres.js`, Kysely, Neon or PlanetScale's
+serverless drivers, or Prisma's `$queryRawUnsafe`.
+
+<details>
+<summary>Already on Drizzle</summary>
 
 ```ts
 // db/schema.ts
@@ -40,52 +103,7 @@ import { createSchema } from "easy-ping/adapters/drizzle";
 export const { notification, notificationDelivery, notificationPreference } = createSchema();
 ```
 
-Push them with `drizzle-kit`, or generate raw SQL:
-
-```ts
-import { coreSchema, renderPostgresDdl } from "easy-ping/schema";
-
-for (const statement of renderPostgresDdl(coreSchema)) await sql.unsafe(statement);
-```
-
-<details>
-<summary>Without an ORM (plain pg, postgres.js, Kysely…)</summary>
-
-```bash
-pnpm add easy-ping pg zod
-```
-
-```ts
-import { postgresAdapter } from "easy-ping/adapters/postgres";
-import { Pool } from "pg";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-const database = postgresAdapter(
-  async (text, params) => (await pool.query(text, params as unknown[])).rows,
-  {
-    // Optional, but it is what makes createNotifications atomic.
-    transaction: async (fn) => {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        const result = await fn(async (t, p) => (await client.query(t, p as unknown[])).rows);
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      } finally {
-        client.release();
-      }
-    },
-  },
-);
-```
-
-One function — run a parameterised statement, return rows — is the entire contract.
-Anything that can do that works: `pg`, `postgres.js`, Kysely, Neon or PlanetScale's
-serverless drivers, or Prisma's `$queryRawUnsafe`.
+Push it with `drizzle-kit`, then `drizzleAdapter(db)` in place of `postgresAdapter`.
 
 </details>
 
@@ -103,15 +121,28 @@ const client = new MongoClient(process.env.MONGO_URL!);
 await client.connect();
 const db = client.db("app");
 
-// There are no tables to create, only indexes. Run once at startup.
+// No tables, only indexes. Run once at startup.
 await createMongoIndexes(db);
 
 // Pass the client too: it is what makes a notification and its deliveries
 // land together, which needs a replica set.
-const database = mongoAdapter(db, { client });
+export const database = mongoAdapter(db, { client });
 ```
 
 Everything after this point is identical.
+
+</details>
+
+<details>
+<summary>Adding a plugin's tables</summary>
+
+Plugins own their own tables and export the declaration, so no plugin instance is needed:
+
+```ts
+import { pushSchema } from "easy-ping/plugins/push";
+
+await createPostgresTables(query, { plugins: [pushSchema] });
+```
 
 </details>
 
@@ -120,16 +151,14 @@ Everything after this point is identical.
 ```ts
 // notify.ts
 import { defineNotification, easyPing, escapeHtml } from "easy-ping";
-import { drizzleAdapter } from "easy-ping/adapters/drizzle";
 import { resend } from "easy-ping/providers/resend";
 import { after } from "next/server";
-import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "./auth";
-import { db, users } from "./db";
+import { database, pool } from "./db";   // from step 2
 
 export const notify = easyPing({
-  database: drizzleAdapter(db),
+  database,
 
   // Both at least 16 characters; `openssl rand -base64 32` is the easy way.
   secret: process.env.NOTIFY_SECRET!,
@@ -141,14 +170,19 @@ export const notify = easyPing({
       (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
   },
 
-  // Batched — one call per send, never one per recipient.
-  getRecipients: async (userIds) =>
-    (await db.select().from(users).where(inArray(users.id, [...userIds]))).map((u) => ({
+  // Batched: one call per send, never one per recipient.
+  getRecipients: async (userIds) => {
+    const { rows } = await pool.query(
+      "select id, email, timezone, locale from users where id = any($1)",
+      [userIds],
+    );
+    return rows.map((u) => ({
       userId: u.id,
       email: u.email,
       timezone: u.timezone,
       locale: u.locale,
-    })),
+    }));
+  },
 
   channels: {
     inApp: { enabled: true },
@@ -175,7 +209,9 @@ export const notify = easyPing({
 ### 4. Mount the endpoints
 
 ```ts
-// app/api/notifications/[...notify]/route.ts
+// app/api/notifications/[[...notify]]/route.ts
+// Double brackets: Next's required catch-all would not match the bare
+// /api/notifications path, which is where the feed lives.
 import { notify } from "@/notify";
 
 export const { GET, POST } = notify.handler;
@@ -356,7 +392,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()` |
 | ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |
 | ⬜ realtime, batching | |
-| ⬜ Prisma / Kysely adapters, Vue / Svelte bindings | |
+| ⬜ Prisma adapter, Vue / Svelte bindings | Kysely already works through `postgresAdapter` |
 
 ---
 
@@ -409,23 +445,16 @@ RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>"   pnpm --filter easy-ping
 
 ## Releasing
 
-Nothing is on npm yet. The name `easy-ping` is unclaimed.
-
-The Release workflow only maintains the version PR; it does **not** publish. npm trusted publishing (OIDC) cannot create a package that does not exist — a trusted publisher is configured against an existing package, so the first `PUT` is rejected as `E404`, which reads like "name taken" and is not.
-
-The first release is manual:
+Every release is automatic. Open a PR with a changeset:
 
 ```bash
-# 1. bump off 0.0.0
-pnpm changeset            # choose minor -> 0.1.0
-pnpm changeset version
-
-# 2. publish once, by hand
-npm login
-pnpm --filter easy-ping publish --access public
+pnpm changeset          # describe the change, pick patch/minor/major
 ```
 
-Then enable trusted publishing on npmjs.com for this repo and this workflow, and re-add `publish: pnpm changeset publish` to `.github/workflows/release.yml`. Every release after that is automatic.
+On merge to `main`, the Release workflow opens a version PR. Merging *that* publishes to npm via
+[trusted publishing](https://docs.npmjs.com/trusted-publishers/), tags the commit and opens a
+GitHub Release from the changelog. No npm token is stored anywhere; the workflow mints a
+short-lived OIDC token instead.
 
 ## License
 
