@@ -29,7 +29,7 @@ const available = await postgresReachable();
 function build(overrides: Partial<EasyPingConfig<typeof definitions>> = {}) {
   return easyPing({
     database: db.adapter,
-    secret: "signing-secret",
+    secret: "test-signing-secret-0123456789",
     cron: { secret: CRON_SECRET },
     session: { getUserId: async () => "u1" },
     getRecipients: async (ids) => ids.map(recipient),
@@ -203,8 +203,8 @@ describe.skipIf(!available)("route handler", () => {
   describe("config validation", () => {
     const base = {
       database: undefined as never,
-      secret: "s",
-      cron: { secret: "c" },
+      secret: "test-signing-secret-0123456789",
+      cron: { secret: "test-cron-secret-0123456789" },
       session: { getUserId: async () => "u1" },
       getRecipients: async () => [],
       notifications: definitions,

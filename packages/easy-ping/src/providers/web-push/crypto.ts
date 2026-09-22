@@ -22,11 +22,24 @@ function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-function requireBytes(value: string, label: string, length?: number): Uint8Array<ArrayBuffer> {
+/** The subscription itself is unusable. Distinct from a transport failure so the plugin prunes rather than retries. */
+export class InvalidSubscriptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidSubscriptionError";
+  }
+}
+
+function requireBytes(
+  value: string,
+  label: string,
+  length?: number,
+  Failure: new (message: string) => Error = Error,
+): Uint8Array<ArrayBuffer> {
   const bytes = decodeBase64UrlBytes(value);
-  if (!bytes) throw new Error(`${label} is not valid base64url`);
+  if (!bytes) throw new Failure(`${label} is not valid base64url`);
   if (length !== undefined && bytes.length !== length) {
-    throw new Error(`${label} must be ${length} bytes, got ${bytes.length}`);
+    throw new Failure(`${label} must be ${length} bytes, got ${bytes.length}`);
   }
   return bytes;
 }
@@ -76,8 +89,11 @@ export async function encryptPayload(
     throw new Error(`push payload is ${plaintext.length} bytes; the limit is ${MAX_PAYLOAD_BYTES}`);
   }
 
-  const uaPublic = requireBytes(userAgentPublicKey, "p256dh", 65);
-  const auth = requireBytes(authSecret, "auth", 16);
+  const uaPublic = requireBytes(userAgentPublicKey, "p256dh", 65, InvalidSubscriptionError);
+  const auth = requireBytes(authSecret, "auth", 16, InvalidSubscriptionError);
+  if (uaPublic[0] !== 0x04) {
+    throw new InvalidSubscriptionError("p256dh must be an uncompressed EC point");
+  }
 
   const salt = overrides?.salt
     ? new Uint8Array(overrides.salt)

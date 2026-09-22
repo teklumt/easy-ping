@@ -1,5 +1,5 @@
 import { inArray } from "drizzle-orm";
-import { defineNotification, easyPing } from "easy-ping";
+import { defineNotification, easyPing, escapeHtml } from "easy-ping";
 import { drizzleAdapter } from "easy-ping/adapters/drizzle";
 import { resend } from "easy-ping/providers/resend";
 import { after } from "next/server";
@@ -57,11 +57,12 @@ export const notify = easyPing({
       schema: z.object({ authorName: z.string(), commentId: z.string() }),
       channels: ["inApp", "email"],
       email: {
-        // payload is inferred from the schema above
+        // payload is inferred from the schema above. authorName is user input:
+        // unescaped, a display name becomes markup sent from your domain.
         subject: (payload) => `${payload.authorName} replied to you`,
         template: (payload) =>
-          `<p><strong>${payload.authorName}</strong> replied to your comment.</p>
-           <p><a href="https://acme.dev/c/${payload.commentId}">View the thread</a></p>`,
+          `<p><strong>${escapeHtml(payload.authorName)}</strong> replied to your comment.</p>
+           <p><a href="https://acme.dev/c/${encodeURIComponent(payload.commentId)}">View the thread</a></p>`,
       },
     }),
 

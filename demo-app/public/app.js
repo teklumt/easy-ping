@@ -21,15 +21,21 @@ const client = createNotifyClient({
 
 client.subscribe((state) => {
   document.querySelector("#badge").textContent = state.unseenCount;
-  document.querySelector("#feed").innerHTML = state.notifications
-    .map(
-      (n) =>
-        `<li class="${n.readAt ? "read" : "unread"}">
-           <strong>${n.type}</strong>
-           <span>${n.payload?.body ?? ""}</span>
-         </li>`,
-    )
-    .join("");
+
+  // Built as nodes, never innerHTML: payload.body is whatever the sender typed.
+  const feed = document.querySelector("#feed");
+  feed.replaceChildren(
+    ...state.notifications.map((n) => {
+      const item = document.createElement("li");
+      item.className = n.readAt ? "read" : "unread";
+      const type = document.createElement("strong");
+      type.textContent = n.type;
+      const body = document.createElement("span");
+      body.textContent = n.payload?.body ?? "";
+      item.append(type, " ", body);
+      return item;
+    }),
+  );
 });
 
 document.querySelector("#enable").addEventListener("click", async () => {

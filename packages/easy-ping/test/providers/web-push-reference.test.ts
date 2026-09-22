@@ -57,7 +57,7 @@ describe("web push against the reference implementation", () => {
     const target = subscriber(`${origin}/push/ref`);
 
     const payload = { title: "Deploy finished", body: "main is live", data: { id: "n_1" } };
-    await webPush({ subject: "mailto:ops@acme.dev", vapid }).send({
+    await webPush({ subject: "mailto:ops@acme.dev", vapid, allowInsecureEndpoints: true }).send({
       ...payload,
       subscription: target.subscription,
     });
@@ -77,7 +77,7 @@ describe("web push against the reference implementation", () => {
   it("emits a well-formed RFC 8188 header", async () => {
     received = [];
     const vapid = await generateVapidKeys();
-    await webPush({ subject: "mailto:ops@acme.dev", vapid }).send({
+    await webPush({ subject: "mailto:ops@acme.dev", vapid, allowInsecureEndpoints: true }).send({
       title: "t",
       body: "b",
       subscription: subscriber(`${origin}/push/header`).subscription,
@@ -96,7 +96,11 @@ describe("web push against the reference implementation", () => {
     received = [];
     const vapid = await generateVapidKeys();
     const target = subscriber(`${origin}/push/salt`);
-    const provider = webPush({ subject: "mailto:ops@acme.dev", vapid });
+    const provider = webPush({
+      subject: "mailto:ops@acme.dev",
+      vapid,
+      allowInsecureEndpoints: true,
+    });
     const message = { title: "same", body: "same", subscription: target.subscription };
 
     await provider.send(message);

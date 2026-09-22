@@ -147,6 +147,11 @@ function toFilter(where: WhereClause): Document {
     }
 
     if (!isOperator(condition)) {
+      // The store already refuses these; this is the last line before the
+      // driver, where `{ $ne: null }` stops being data and becomes a query.
+      if (typeof condition === "object" && !(condition instanceof Date)) {
+        throw new Error(`mongo filter on "${field}" received an object; only scalars are bound`);
+      }
       filter[key] = condition;
       continue;
     }

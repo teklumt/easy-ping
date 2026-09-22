@@ -19,21 +19,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # docker compose rather than `services:`, because Mongo needs a command
       # override to run as a replica set and a service container cannot set
       # one. It also keeps CI and a local run on the same definition.
       - run: docker compose up -d --wait
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # The published package's own dependency graph. The examples are audited
+      # separately and are allowed to lag; consumers never install them.
+      - run: pnpm --filter easy-ping audit --prod --audit-level high
 
       - run: pnpm lint
       - run: pnpm typecheck
@@ -52,12 +56,12 @@ jobs:
         node: [20, 24]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
 
       # Install and build on the toolchain version; pnpm cannot run on 20.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -66,7 +70,7 @@ jobs:
       - run: pnpm build
 
       # Then drop to the target runtime and exercise the built bundles.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
 

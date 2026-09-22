@@ -23,8 +23,8 @@ const available = await postgresReachable();
 const build = (mode: "inline" | "cron", userId = "u1") =>
   easyPing({
     database: db.adapter,
-    secret: "s",
-    cron: { secret: "c" },
+    secret: "test-signing-secret-0123456789",
+    cron: { secret: "test-cron-secret-0123456789" },
     session: { getUserId: async () => userId },
     getRecipients: async (ids) => ids.map(recipient),
     notifications: definitions,
@@ -66,8 +66,8 @@ describe.skipIf(!available)("suspected defects", () => {
 
     const inline = easyPing({
       database: counting,
-      secret: "s",
-      cron: { secret: "c" },
+      secret: "test-signing-secret-0123456789",
+      cron: { secret: "test-cron-secret-0123456789" },
       session: { getUserId: async () => "u1" },
       getRecipients: async (ids) => ids.map(recipient),
       notifications: definitions,
@@ -114,8 +114,8 @@ describe.skipIf(!available)("suspected defects", () => {
 
     const notify2 = easyPing({
       database: spy,
-      secret: "s",
-      cron: { secret: "c" },
+      secret: "test-signing-secret-0123456789",
+      cron: { secret: "test-cron-secret-0123456789" },
       session: { getUserId: async () => "u1" },
       getRecipients: async (ids) => ids.map(recipient),
       notifications: definitions,
@@ -127,7 +127,7 @@ describe.skipIf(!available)("suspected defects", () => {
     await notify2.handler.POST(
       new Request("https://app.dev/api/notifications/cron", {
         method: "POST",
-        headers: { authorization: "Bearer c" },
+        headers: { authorization: "Bearer test-cron-secret-0123456789" },
       }),
     );
 
@@ -139,8 +139,8 @@ describe.skipIf(!available)("suspected defects", () => {
     const withChannels = (channels: readonly ("inApp" | "email" | "push")[], warnings: string[]) =>
       easyPing({
         database: db.adapter,
-        secret: "s",
-        cron: { secret: "c" },
+        secret: "test-signing-secret-0123456789",
+        cron: { secret: "test-cron-secret-0123456789" },
         session: { getUserId: async () => "u1" },
         getRecipients: async (ids) => ids.map(recipient),
         notifications: { thing: { channels } },
@@ -210,7 +210,7 @@ describe.skipIf(!available)("suspected defects", () => {
     const response = await notify.handler.POST(
       new Request("https://app.dev/api/notifications/cron", {
         method: "POST",
-        headers: { authorization: "Bearer c" },
+        headers: { authorization: "Bearer test-cron-secret-0123456789" },
       }),
     );
 

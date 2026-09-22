@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { encodeBase64Url } from "../src/core/base64url";
 import type { NotificationDefinitions } from "../src/core/definition";
 import { easyPing } from "../src/core/instance";
 import type { Recipient } from "../src/core/types";
@@ -6,7 +7,7 @@ import { type PushMessage, type PushSendResult, push } from "../src/plugins/push
 import { renderPostgresDdl } from "../src/schema/render-sql";
 import { createTestDatabase, postgresReachable, type TestDatabase } from "./helpers/pg";
 
-const CRON = "cron-secret";
+const CRON = "cron-secret-0123456789";
 const BASE = "/api/notifications";
 
 const definitions = {
@@ -39,7 +40,7 @@ const provider = {
 function build() {
   return easyPing({
     database: db.adapter,
-    secret: "s",
+    secret: "test-signing-secret-0123456789",
     cron: { secret: CRON },
     session: { getUserId: async (request) => request.headers.get("x-user") },
     getRecipients: async (ids) => ids.map(recipient),
@@ -63,10 +64,13 @@ const post = (path: string, body: unknown, userId = "u1") =>
     body: JSON.stringify(body),
   });
 
-const subscription = (endpoint: string) => ({
-  endpoint,
-  keys: { p256dh: "key-p256", auth: "key-auth" },
-});
+// Shaped like a real subscription: a 65-byte uncompressed point and a 16-byte secret.
+const validKeys = {
+  p256dh: encodeBase64Url(new Uint8Array([0x04, ...new Uint8Array(64).fill(7)])),
+  auth: encodeBase64Url(new Uint8Array(16).fill(9)),
+};
+
+const subscription = (endpoint: string, keys = validKeys) => ({ endpoint, keys });
 
 const runCron = (notify: ReturnType<typeof build>) =>
   notify.handler.POST(

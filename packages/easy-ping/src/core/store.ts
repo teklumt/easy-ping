@@ -1,6 +1,6 @@
 import { toSnakeCase } from "../schema/declaration";
 import { ConfigError } from "./errors";
-import type { SchemaDeclaration, TableDeclaration } from "./plugin";
+import type { FieldDeclaration, SchemaDeclaration, TableDeclaration } from "./plugin";
 
 export type Scalar = string | number | boolean | Date | null;
 
@@ -74,7 +74,52 @@ export const isOperator = (value: unknown): boolean =>
   typeof value === "object" &&
   value !== null &&
   !(value instanceof Date) &&
-  OPERATORS.some((op) => op in value);
+  OPERATORS.some((op) => Object.hasOwn(value, op));
+
+const isScalar = (value: unknown): value is Scalar =>
+  value === null ||
+  typeof value === "string" ||
+  typeof value === "number" ||
+  typeof value === "boolean" ||
+  value instanceof Date;
+
+/**
+ * Types say a condition is a scalar or an operator, but a route that forwards
+ * a JSON body has no such guarantee: an object with a `$ne` key is a Mongo
+ * operator once it reaches the driver. Refuse anything else at the boundary.
+ */
+function assertCondition(pluginId: string, field: string, condition: unknown): void {
+  if (isScalar(condition)) return;
+
+  if (isOperator(condition)) {
+    const operator = condition as Record<string, unknown>;
+    const keys = Object.keys(operator);
+    const [op] = keys;
+    if (keys.length !== 1 || op === undefined) {
+      throw new ConfigError(`plugin "${pluginId}" gave field "${field}" more than one operator.`);
+    }
+    const payload = operator[op];
+    const valid =
+      op === "in"
+        ? Array.isArray(payload) &&
+          payload.every((item) => typeof item === "string" || typeof item === "number")
+        : isScalar(payload);
+    if (valid) return;
+  }
+
+  throw new ConfigError(
+    `plugin "${pluginId}" passed a non-scalar value for field "${field}"; ` +
+      "validate request bodies before querying with them.",
+  );
+}
+
+function assertValue(pluginId: string, field: string, spec: FieldDeclaration, value: unknown) {
+  if (value === undefined || isScalar(value)) return;
+  if (spec.type === "json" && typeof value === "object") return;
+  throw new ConfigError(
+    `plugin "${pluginId}" passed a non-scalar value for ${spec.type} field "${field}".`,
+  );
+}
 
 /**
  * Every table and column a plugin touches is checked against its own
@@ -104,7 +149,8 @@ export function createPluginStore(
 
   function checkFields(table: TableDeclaration, fields: Iterable<string>, context: string) {
     for (const field of fields) {
-      const spec = table.fields[field];
+      // hasOwn, not a lookup: `constructor` and `__proto__` are not columns.
+      const spec = Object.hasOwn(table.fields, field) ? table.fields[field] : undefined;
       if (!spec) {
         throw new ConfigError(
           `plugin "${pluginId}" used unknown field "${field}" on "${table.tableName}" (${context}).`,
@@ -116,6 +162,21 @@ export function createPluginStore(
             "a bare object value is indistinguishable from an operator.",
         );
       }
+    }
+  }
+
+  function checkWhere(table: TableDeclaration, where: WhereClause) {
+    checkFields(table, Object.keys(where), "where");
+    for (const [field, condition] of Object.entries(where)) {
+      assertCondition(pluginId, field, condition);
+    }
+  }
+
+  function checkRow(table: TableDeclaration, row: Record<string, unknown>, context: string) {
+    checkFields(table, Object.keys(row), context);
+    for (const [field, value] of Object.entries(row)) {
+      const spec = table.fields[field];
+      if (spec) assertValue(pluginId, field, spec, value);
     }
   }
 
@@ -144,7 +205,7 @@ export function createPluginStore(
   return {
     async find(table, where = {}, options = {}) {
       const declaration = resolve(table);
-      checkFields(declaration, Object.keys(where), "where");
+      checkWhere(declaration, where);
       if (options.orderBy) checkFields(declaration, [options.orderBy.field], "orderBy");
 
       const rows = await storage.queryTable(qualified(declaration), where, options);
@@ -156,11 +217,12 @@ export function createPluginStore(
         const mapped: Record<string, unknown> = {};
         for (const field of Object.keys(declaration.fields)) {
           const value = row[column(field)];
-          // Drivers differ: some hand back parsed jsonb, some raw text.
-          mapped[field] =
-            declaration.fields[field]?.type === "json" && typeof value === "string"
-              ? JSON.parse(value)
-              : value;
+          const type = declaration.fields[field]?.type;
+          // Drivers differ: some hand back parsed jsonb, some raw text; some
+          // return timestamptz as a Date, postgres.js through Drizzle as text.
+          if (type === "json" && typeof value === "string") mapped[field] = JSON.parse(value);
+          else if (type === "date" && typeof value === "string") mapped[field] = new Date(value);
+          else mapped[field] = value;
         }
         return mapped;
       }) as never;
@@ -168,7 +230,7 @@ export function createPluginStore(
 
     async insert(table, rows) {
       const declaration = resolve(table);
-      for (const row of rows) checkFields(declaration, Object.keys(row), "insert");
+      for (const row of rows) checkRow(declaration, row, "insert");
       return storage.insertRows(
         qualified(declaration),
         rows.map((row) => serialize(declaration, row)),
@@ -177,7 +239,7 @@ export function createPluginStore(
 
     async upsert(table, rows, options) {
       const declaration = resolve(table);
-      for (const row of rows) checkFields(declaration, Object.keys(row), "upsert");
+      for (const row of rows) checkRow(declaration, row, "upsert");
       checkFields(declaration, options.onConflict, "onConflict");
       return storage.insertRows(
         qualified(declaration),
@@ -188,14 +250,14 @@ export function createPluginStore(
 
     async update(table, where, set) {
       const declaration = resolve(table);
-      checkFields(declaration, Object.keys(where), "where");
-      checkFields(declaration, Object.keys(set), "update");
+      checkWhere(declaration, where);
+      checkRow(declaration, set, "update");
       return storage.updateRows(qualified(declaration), where, serialize(declaration, set));
     },
 
     async remove(table, where) {
       const declaration = resolve(table);
-      checkFields(declaration, Object.keys(where), "where");
+      checkWhere(declaration, where);
       return storage.deleteRows(qualified(declaration), where);
     },
   };

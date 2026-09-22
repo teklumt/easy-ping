@@ -17,6 +17,7 @@ export type {
   EasyPing,
   EasyPingConfig,
   HealthReport,
+  MountedRoute,
   SendArgs,
   SendResult,
   SessionConfig,
@@ -33,7 +34,10 @@ export type {
 export { defineNotification } from "./core/definition";
 export type { Logger } from "./core/errors";
 export { ConfigError, consoleLogger, EasyPingError, ValidationError } from "./core/errors";
-export { easyPing } from "./core/instance";
+export type { JsonBody } from "./core/handler";
+export { MAX_BODY_BYTES, readJsonBody } from "./core/handler";
+export { escapeHtml } from "./core/html";
+export { easyPing, MIN_SECRET_LENGTH } from "./core/instance";
 export type {
   ActionsOf,
   AfterDeliverContext,
@@ -60,10 +64,18 @@ export type {
 } from "./core/plugin";
 export { defineClientPlugin, definePlugin } from "./core/plugin";
 export type { EmailMessage, EmailProvider, ProviderSendResult } from "./core/provider";
+export type { RateLimitConfig } from "./core/rate-limit";
+export { createRateLimiter } from "./core/rate-limit";
 export type { Runner, RunnerDeps, SweepResult } from "./core/runner";
-export { createRunner } from "./core/runner";
-export type { TokenClaims } from "./core/tokens";
-export { DEFAULT_TOKEN_TTL_SECONDS, expiresIn, signToken, verifyToken } from "./core/tokens";
+export { createRunner, redactErrorMessage } from "./core/runner";
+export type { SignRequest, TokenClaims } from "./core/tokens";
+export {
+  DEFAULT_TOKEN_TTL_SECONDS,
+  expiresIn,
+  MAX_TOKEN_TTL_SECONDS,
+  signToken,
+  verifyToken,
+} from "./core/tokens";
 
 export type {
   Channel,

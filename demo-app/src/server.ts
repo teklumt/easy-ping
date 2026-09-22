@@ -14,6 +14,13 @@ const env = (key: string, fallback?: string) => {
   return value;
 };
 
+// Identity here is a request header anyone can set. This must never face the internet.
+if (process.env.NODE_ENV === "production") {
+  throw new Error(
+    "the demo trusts an x-demo-user header for identity and cannot run in production",
+  );
+}
+
 const DB_DRIVER = env("DB_DRIVER", "postgres") as Driver;
 const VAPID_PUBLIC_KEY = env("VAPID_PUBLIC_KEY");
 const VAPID_PRIVATE_KEY = env("VAPID_PRIVATE_KEY");
@@ -27,6 +34,7 @@ const pushPlugin = push({
     subject: process.env.VAPID_SUBJECT ?? "mailto:demo@example.com",
     vapid: { publicKey: VAPID_PUBLIC_KEY, privateKey: VAPID_PRIVATE_KEY },
   }),
+  // The demo talks to real push services, so the production defaults apply.
   render: ({ type, payload }) => {
     const data = payload as { title?: string; body?: string };
     return { title: data.title ?? type, body: data.body ?? "You have a new notification" };
@@ -42,8 +50,8 @@ const { adapter, label } = await connect(DB_DRIVER, [
 
 const notify = easyPing({
   database: adapter,
-  secret: env("NOTIFY_SECRET", "demo-signing-secret"),
-  cron: { secret: env("NOTIFY_CRON_SECRET", "demo-cron-secret") },
+  secret: env("NOTIFY_SECRET"),
+  cron: { secret: env("NOTIFY_CRON_SECRET") },
 
   // A demo stand-in for real auth: the browser sends whoever it is.
   session: { getUserId: async (request) => request.headers.get("x-demo-user") ?? "demo-user" },
@@ -149,7 +157,7 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(3210, () => {
+server.listen(3210, "127.0.0.1", () => {
   console.log("\n  easy-ping demo -> http://localhost:3210");
   console.log(`  database: ${label}\n`);
 });

@@ -1,8 +1,9 @@
 import type { DatabaseAdapter } from "./adapter";
 import type { NotificationDefinitions, PayloadOf } from "./definition";
 import type { Logger } from "./errors";
-import type { AnyPlugin } from "./plugin";
+import type { AnyPlugin, Promisable, RouteScope } from "./plugin";
 import type { EmailProvider } from "./provider";
+import type { RateLimitConfig } from "./rate-limit";
 import type { Channel, DeliveryMode, DeliveryRecord, Recipient, SkipReason } from "./types";
 
 export type SessionConfig = {
@@ -41,10 +42,36 @@ export type EasyPingConfig<TDefs extends NotificationDefinitions> = {
   channels: ChannelsConfig;
   delivery?: DeliveryConfig;
   /** Required by `cron` and `deferred` modes. See RFC 0002 §4. */
-  cron?: { secret: string };
+  cron?: {
+    secret: string;
+    /** Sweeps one POST /cron may run before returning. Defaults to 50. */
+    maxSweeps?: number;
+  };
+  /**
+   * Bearer secret for plugins' machine routes (`/push/prune`, `/digests/cron`).
+   * Falls back to `cron.secret`; set it when the scheduler that hits /cron
+   * should not also be able to prune devices or fire digests.
+   */
+  machineSecret?: string;
+  /**
+   * In-process fixed-window limiter, applied before routing. Keyed by client
+   * address from the usual proxy headers unless `key` says otherwise.
+   */
+  rateLimit?: RateLimitConfig;
   plugins?: readonly AnyPlugin[];
   /** Where the handler is mounted, used to strip the prefix off incoming URLs. */
   basePath?: string;
+  /**
+   * Origins allowed to POST besides the request's own host. Cross-origin
+   * POSTs are otherwise refused with 403, and every POST must be
+   * `application/json`. `"*.example.com"` matches subdomains.
+   */
+  trustedOrigins?: readonly string[];
+  /** Runs before routing. Return a Response to short-circuit — a rate limiter's 429, say. */
+  // biome-ignore lint/suspicious/noConfusingVoidType: a hook that returns nothing is the common case
+  onRequest?: (request: Request) => Promisable<Response | undefined | void>;
+  /** Defaults to 64 KiB. */
+  maxBodyBytes?: number;
   /** Table-name prefix; must match the one given to the adapter. */
   tablePrefix?: string;
   logger?: Logger;
@@ -71,6 +98,14 @@ export type Worker = {
   stop: () => Promise<void>;
 };
 
+export type MountedRoute = {
+  method: "GET" | "POST";
+  path: string;
+  scope: RouteScope;
+  /** "core" for the built-in routes, otherwise the plugin id. */
+  owner: string;
+};
+
 export type HealthReport = {
   mode: DeliveryMode;
   cronMounted: boolean;
@@ -94,6 +129,9 @@ export type EasyPing<TDefs extends NotificationDefinitions> = {
 
   startWorker(options?: { intervalMs?: number; batchSize?: number }): Worker;
   healthCheck(): Promise<HealthReport>;
+
+  /** Every mounted route with its auth scope, so `custom`-scoped ones stay visible. RFC 0002 §3. */
+  listRoutes(): readonly MountedRoute[];
 
   /**
    * Deliveries that exhausted their attempts, newest first.

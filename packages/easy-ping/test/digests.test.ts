@@ -8,7 +8,7 @@ import { preferences } from "../src/plugins/preferences";
 import { renderPostgresDdl } from "../src/schema/render-sql";
 import { createTestDatabase, postgresReachable, type TestDatabase } from "./helpers/pg";
 
-const CRON = "cron-secret";
+const CRON = "cron-secret-0123456789";
 const silent = { warn: () => {}, error: () => {} };
 
 describe("digest scheduling", () => {
@@ -102,7 +102,7 @@ const logged: string[] = [];
 function build(zone = "UTC", sendHour = 0) {
   return easyPing({
     database: db.adapter,
-    secret: "s",
+    secret: "test-signing-secret-0123456789",
     cron: { secret: CRON },
     session: { getUserId: async () => "u1" },
     getRecipients: async (ids) => ids.map((id) => recipient(id, zone)),
@@ -255,7 +255,7 @@ describe.skipIf(!available)("digests plugin", () => {
     expect(() =>
       easyPing({
         database: db.adapter,
-        secret: "s",
+        secret: "test-signing-secret-0123456789",
         cron: { secret: CRON },
         session: { getUserId: async () => "u1" },
         getRecipients: async () => [],

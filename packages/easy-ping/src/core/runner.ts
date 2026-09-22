@@ -51,7 +51,16 @@ async function withTimeout<T>(
   }
 }
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/**
+ * What gets persisted to `last_error`. Provider responses quote the offending
+ * field, which for a bad recipient is the address itself; that column outlives
+ * the notification and is read by admin tooling, so addresses do not go in.
+ */
+export const redactErrorMessage = (text: string) =>
+  text.replace(/[^\s"'<>()[\]{},;]+@[^\s"'<>()[\]{},;]+/g, "[redacted-email]");
+
+const message = (error: unknown) =>
+  redactErrorMessage(error instanceof Error ? error.message : String(error));
 
 export function createRunner(deps: RunnerDeps) {
   async function deliverOne(

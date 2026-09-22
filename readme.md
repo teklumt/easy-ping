@@ -114,7 +114,7 @@ Everything after this point is identical.
 
 ```ts
 // notify.ts
-import { defineNotification, easyPing } from "easy-ping";
+import { defineNotification, easyPing, escapeHtml } from "easy-ping";
 import { drizzleAdapter } from "easy-ping/adapters/drizzle";
 import { resend } from "easy-ping/providers/resend";
 import { after } from "next/server";
@@ -126,6 +126,7 @@ import { db, users } from "./db";
 export const notify = easyPing({
   database: drizzleAdapter(db),
 
+  // Both at least 16 characters; `openssl rand -base64 32` is the easy way.
   secret: process.env.NOTIFY_SECRET!,
   cron: { secret: process.env.NOTIFY_CRON_SECRET! },
 
@@ -157,7 +158,9 @@ export const notify = easyPing({
       channels: ["inApp", "email"],
       email: {
         subject: (p) => `${p.authorName} replied to you`,
-        template: (p) => `<p>${p.authorName} replied. <a href="/c/${p.commentId}">View</a></p>`,
+        // Anything a user typed goes through escapeHtml, or their markup ships from your domain.
+        template: (p) =>
+          `<p>${escapeHtml(p.authorName)} replied. <a href="/c/${encodeURIComponent(p.commentId)}">View</a></p>`,
       },
     }),
   },
@@ -315,8 +318,16 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 
 - **`session.getUserId` is mandatory.** There is no default and no dev bypass — an insecure default ships, a startup crash doesn't. Returning `null` yields 401; *throwing* yields 500, because a broken session store and an absent session are different bugs.
 - **Every query is scoped server-side.** No route accepts a user id from the client. Marking someone else's notification read returns 404, not 403 — a 403 confirms the row exists.
-- **`cron.secret` is required** for modes that rely on the sweep. Unauthenticated, that endpoint is a free flush-everything trigger against your email provider. Compared in constant time.
-- **In-app payloads are served to the browser verbatim.** Never put anything in `payload` the recipient shouldn't read.
+- **`cron.secret` is required** for modes that rely on the sweep. Unauthenticated, that endpoint is a free flush-everything trigger against your email provider. Compared in constant time. Plugin machine routes (`/push/prune`, `/digests/cron`) accept it too unless you set `machineSecret`, which keeps the scheduler's credential to `/cron` alone. One call drains at most `cron.maxSweeps` sweeps (default 50).
+- **Plugins never see the secret.** They get `ctx.sign()`, which mints tokens only for the purposes their own signed routes declare; keys are derived per purpose with HKDF, so an unsubscribe key signs nothing else. `notify.listRoutes()` shows every mounted route with its auth scope, and a `custom`-scoped route is named in a startup warning with its justification.
+- **Secrets must be at least 16 characters** and not a placeholder; startup throws otherwise. A short HMAC key makes every unsubscribe link forgeable offline.
+- **CSRF.** Every POST must be `application/json` (415 otherwise) and, when the browser sends an `Origin`, it must match the request host or an entry in `trustedOrigins` (403 otherwise). This holds even if your session cookie is `SameSite=None`. Set `trustedOrigins: ["https://app.example.com", "*.example.com"]` when the API lives on a different origin from the page.
+- **Push endpoints are validated at registration.** Public https hosts only, well-formed keys, one owner per endpoint for life (409 if another account registered it), at most `maxDevicesPerUser` rows per user. Pin `allowedEndpointHosts` to the push services you expect if you want the SSRF surface closed entirely.
+- **Email templates are sent as-is.** Run every payload field a user could have typed through `escapeHtml`, or use a templating library that escapes by default. The quickstart shows the pattern.
+- **In-app payloads are served to the browser verbatim.** Never put anything in `payload` the recipient shouldn't read, and never render it with `innerHTML`.
+- **Request bodies are capped at 64 KiB** (`maxBodyBytes`), responses carry `Cache-Control: private, no-store`, and a thrown adapter error is a logged 500 rather than a stack trace or a crashed process.
+- **Rate limiting.** `rateLimit: { max, windowMs }` is an in-process fixed-window limiter keyed by the client address from `cf-connecting-ip` / `x-real-ip` / `x-forwarded-for` (or your own `key`), applied to every route including `/cron` and `/unsubscribe`. It is per process, not global: enough to blunt secret guessing and poll storms, not a quota. `onRequest` runs before it if you have a shared limiter of your own. The inbox is polled by every open tab, so size limits with that in mind.
+- **Unsubscribe tokens** travel in the URL, so they will appear in access logs. They are valid for 30 days by default, capped at 90. A token is refused if the user changed that preference after it was issued, so an old link cannot undo a newer decision; clicking the same link twice is still a 200. `last_error` stores provider messages with email addresses redacted.
 
 ---
 

@@ -1,6 +1,7 @@
 import type { DeliveryOutcome } from "./adapter";
 import type { Logger } from "./errors";
 import type { PluginStore } from "./store";
+import type { SignRequest, TokenClaims } from "./tokens";
 import type { Channel, Recipient } from "./types";
 
 export type Promisable<T> = T | Promise<T>;
@@ -126,7 +127,7 @@ export type RouteContext = {
   /** Resolved for user-scoped routes, so a handler cannot forget to scope. */
   userId: string | null;
   /** Verified before dispatch, so a handler cannot forget to check. */
-  claims: { uid: string; purpose: string; exp: number; data?: Record<string, string> } | null;
+  claims: TokenClaims | null;
   params: Record<string, string>;
 };
 
@@ -141,9 +142,15 @@ export type RouteDefinition = {
 export type PluginInitContext = {
   /** Scoped to the tables this plugin declares in schema(). */
   store: PluginStore;
-  /** The top-level signing secret, for plugins issuing signed links. */
-  secret: string;
+  /**
+   * Mints tokens for this plugin's own `signed` routes and nothing else. The
+   * master secret itself is never handed out: a plugin cannot forge another
+   * plugin's links, or anything a future signed flow relies on.
+   */
+  sign: (request: SignRequest) => Promise<string>;
   logger: Logger;
+  /** Configured notification names, so a route can refuse to store rows for types that do not exist. */
+  notificationTypes: readonly string[];
   /** The app's resolver, for plugins that need timezones or addresses. */
   getRecipients: (userIds: readonly string[]) => Promise<readonly Recipient[]>;
   /**

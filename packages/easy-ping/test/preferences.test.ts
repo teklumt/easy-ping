@@ -8,7 +8,7 @@ import { buildUnsubscribeToken, preferences } from "../src/plugins/preferences";
 import { createTestDatabase, postgresReachable, type TestDatabase } from "./helpers/pg";
 
 const BASE = "/api/notifications";
-const SECRET = "signing-secret";
+const SECRET = "signing-secret-0123456789";
 
 const definitions = {
   commentReply: {
@@ -37,7 +37,7 @@ function build(pluginOptions: Partial<Parameters<typeof preferences>[0]> = {}, u
   return easyPing({
     database: db.adapter,
     secret: SECRET,
-    cron: { secret: "cron" },
+    cron: { secret: "test-cron-secret-0123456789" },
     session: { getUserId: async () => userId },
     getRecipients: async (ids) => ids.map(recipient),
     notifications: definitions,
@@ -187,7 +187,7 @@ describe.skipIf(!available)("preferences plugin", () => {
     const notify = easyPing({
       database: counting,
       secret: SECRET,
-      cron: { secret: "cron" },
+      cron: { secret: "test-cron-secret-0123456789" },
       session: { getUserId: async () => "u1" },
       getRecipients: async (ids) => ids.map(recipient),
       notifications: definitions,
@@ -212,7 +212,7 @@ describe.skipIf(!available)("preferences plugin", () => {
     const notify = easyPing({
       database: broken,
       secret: SECRET,
-      cron: { secret: "cron" },
+      cron: { secret: "test-cron-secret-0123456789" },
       session: { getUserId: async () => "u1" },
       getRecipients: async (ids) => ids.map(recipient),
       notifications: definitions,
@@ -290,7 +290,7 @@ describe.skipIf(!available)("preferences plugin", () => {
       const notify = easyPing({
         database: db.adapter,
         secret: SECRET,
-        cron: { secret: "cron" },
+        cron: { secret: "test-cron-secret-0123456789" },
         // Must never be consulted: the user is in their mail client.
         session: {
           getUserId: () => {
@@ -352,7 +352,7 @@ describe.skipIf(!available)("preferences plugin", () => {
       easyPing({
         database: db.adapter,
         secret: SECRET,
-        cron: { secret: "cron" },
+        cron: { secret: "test-cron-secret-0123456789" },
         session: { getUserId: async () => "u1" },
         getRecipients: async () => [],
         notifications: definitions,

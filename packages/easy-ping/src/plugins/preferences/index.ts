@@ -1,3 +1,4 @@
+import { readJsonBody } from "../../core/handler";
 import type {
   ChannelDecision,
   EasyPingPlugin,
@@ -12,12 +13,21 @@ export const UNSUBSCRIBE_PURPOSE = "unsubscribe";
 
 const TABLE = "notification_preference";
 
+const CHANNELS: readonly Channel[] = ["inApp", "email", "push", "sms", "slack"];
+const FREQUENCIES: readonly Frequency[] = ["instant", "daily", "weekly", "off"];
+
+const isChannel = (value: unknown): value is Channel => CHANNELS.includes(value as Channel);
+const isFrequency = (value: unknown): value is Frequency =>
+  FREQUENCIES.includes(value as Frequency);
+
 export type PreferenceRow = {
   userId: string;
   type: string;
   channel: Channel;
   enabled: boolean;
   frequency: Frequency;
+  /** Last explicit change. An unsubscribe token issued before it is refused. */
+  updatedAt?: Date;
 };
 
 export type PreferencesOptions = {
@@ -63,7 +73,9 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
     ctx.store.find<PreferenceRow>(TABLE, { userId: { in: [...userIds] } });
 
   const save = (row: PreferenceRow) =>
-    ctx.store.upsert(TABLE, [row], { onConflict: ["userId", "type", "channel"] });
+    ctx.store.upsert(TABLE, [{ ...row, updatedAt: new Date() }], {
+      onConflict: ["userId", "type", "channel"],
+    });
 
   return {
     id: "preferences",
@@ -81,6 +93,7 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
           channel: { type: "string", required: true },
           enabled: { type: "boolean", required: true, default: true },
           frequency: { type: "string", required: true, default: "instant" },
+          updatedAt: { type: "date", required: true, defaultNow: true },
         },
         primaryKey: ["userId", "type", "channel"],
       },
@@ -131,10 +144,23 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
         method: "POST",
         scope: { type: "user" },
         handler: async ({ request, userId }) => {
-          const body = (await request.json().catch(() => null)) as Partial<PreferenceRow> | null;
+          const parsed = await readJsonBody(request);
+          if ("error" in parsed) return parsed.error;
+          const body = parsed.body;
 
-          if (!body?.type || !body.channel) {
-            return Response.json({ error: "type and channel are required" }, { status: 400 });
+          const bad = (error: string) => Response.json({ error }, { status: 400 });
+
+          // Only types the app defined: otherwise every unknown string the
+          // client invents is a row that lives forever.
+          if (typeof body.type !== "string" || !ctx.notificationTypes.includes(body.type)) {
+            return bad("type must be a configured notification type");
+          }
+          if (!isChannel(body.channel)) return bad(`channel must be one of ${CHANNELS.join(", ")}`);
+          if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+            return bad("enabled must be a boolean");
+          }
+          if (body.frequency !== undefined && !isFrequency(body.frequency)) {
+            return bad(`frequency must be one of ${FREQUENCIES.join(", ")}`);
           }
 
           // userId comes from the resolved session, never from the body.
@@ -158,8 +184,29 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
         scope: { type: "signed", purpose: UNSUBSCRIBE_PURPOSE },
         handler: async ({ claims }) => {
           const type = claims?.data?.type;
-          const channel = claims?.data?.channel as Channel | undefined;
-          if (!claims || !type || !channel) {
+          const channel = claims?.data?.channel;
+          if (!claims || !type || !isChannel(channel)) {
+            return Response.json({ error: "invalid token" }, { status: 400 });
+          }
+
+          const [current] = await ctx.store.find<PreferenceRow>(
+            TABLE,
+            { userId: claims.uid, type, channel },
+            { limit: 1 },
+          );
+
+          // Already off: a second click, or a mail client retrying, is fine.
+          if (current && !current.enabled && current.frequency === "off") {
+            return Response.json({ ok: true, unsubscribed: { type, channel } });
+          }
+
+          // The user changed this preference after the email went out. An old
+          // link must not silently undo a newer decision made while logged in.
+          if (
+            current?.updatedAt &&
+            claims.iat !== undefined &&
+            current.updatedAt.getTime() > (claims.iat + 1) * 1000
+          ) {
             return Response.json({ error: "invalid token" }, { status: 400 });
           }
 

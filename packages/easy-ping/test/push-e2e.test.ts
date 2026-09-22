@@ -97,8 +97,8 @@ describe.each(availableBackends.map((b) => [b.name, b] as const))(
       const vapid = await generateVapidKeys();
       return easyPing({
         database: db.adapter,
-        secret: "s",
-        cron: { secret: "c" },
+        secret: "test-signing-secret-0123456789",
+        cron: { secret: "test-cron-secret-0123456789" },
         session: { getUserId: async (request) => request.headers.get("x-user") },
         getRecipients: async (ids) => ids.map(recipient),
         notifications: definitions,
@@ -108,8 +108,13 @@ describe.each(availableBackends.map((b) => [b.name, b] as const))(
         logger: { warn: () => {}, error: () => {} },
         plugins: [
           push({
-            provider: webPush({ subject: "mailto:ops@acme.dev", vapid }),
+            provider: webPush({
+              subject: "mailto:ops@acme.dev",
+              vapid,
+              allowInsecureEndpoints: true,
+            }),
             render: ({ payload }) => payload as { title: string; body: string },
+            allowInsecureEndpoints: true,
           }),
         ],
       });

@@ -1,5 +1,11 @@
 import type { PushMessage, PushProvider, PushSendResult } from "../../plugins/push";
-import { encryptPayload, MAX_PAYLOAD_BYTES, type VapidKeys, vapidAuthorization } from "./crypto";
+import {
+  encryptPayload,
+  InvalidSubscriptionError,
+  MAX_PAYLOAD_BYTES,
+  type VapidKeys,
+  vapidAuthorization,
+} from "./crypto";
 
 export type WebPushOptions = {
   /** "mailto:you@example.com" or an https URL. Push services require it. */
@@ -9,6 +15,8 @@ export type WebPushOptions = {
   ttlSeconds?: number;
   urgency?: "very-low" | "low" | "normal" | "high";
   fetch?: typeof globalThis.fetch;
+  /** Lets an http endpoint through. For a local fake push service only; never in production. */
+  allowInsecureEndpoints?: boolean;
 };
 
 /**
@@ -43,13 +51,33 @@ export function webPush(options: WebPushOptions): PushProvider {
         );
       }
 
-      const encrypted = await encryptPayload(
-        payload,
-        message.subscription.keys.p256dh,
-        message.subscription.keys.auth,
-      );
+      // A subscription that cannot be encrypted for, or whose endpoint is not
+      // an https URL, will never deliver. Report it so the row is pruned
+      // instead of retried five times.
+      let endpoint: URL;
+      try {
+        endpoint = new URL(message.subscription.endpoint);
+      } catch {
+        return { invalid: true };
+      }
+      const secure = endpoint.protocol === "https:";
+      if (!secure && !(options.allowInsecureEndpoints && endpoint.protocol === "http:")) {
+        return { invalid: true };
+      }
 
-      const authorization = await vapidAuthorization(message.subscription.endpoint, {
+      let encrypted: Awaited<ReturnType<typeof encryptPayload>>;
+      try {
+        encrypted = await encryptPayload(
+          payload,
+          message.subscription.keys.p256dh,
+          message.subscription.keys.auth,
+        );
+      } catch (error) {
+        if (error instanceof InvalidSubscriptionError) return { invalid: true };
+        throw error;
+      }
+
+      const authorization = await vapidAuthorization(endpoint.href, {
         subject: options.subject,
         keys: options.vapid,
       });
@@ -92,4 +120,4 @@ export function webPush(options: WebPushOptions): PushProvider {
 }
 
 export type { VapidKeys } from "./crypto";
-export { generateVapidKeys, MAX_PAYLOAD_BYTES } from "./crypto";
+export { generateVapidKeys, InvalidSubscriptionError, MAX_PAYLOAD_BYTES } from "./crypto";

@@ -71,6 +71,7 @@ export function createSchema(prefix = "") {
       channel: text("channel").$type<Channel>().notNull(),
       enabled: boolean("enabled").notNull().default(true),
       frequency: text("frequency").$type<Frequency>().notNull().default("instant"),
+      updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     },
     (table) => [primaryKey({ columns: [table.userId, table.type, table.channel] })],
   );

@@ -61,6 +61,7 @@ export const coreSchema = {
       channel: { type: "string", required: true },
       enabled: { type: "boolean", required: true, default: true },
       frequency: { type: "string", required: true, default: "instant" },
+      updatedAt: { type: "date", required: true, defaultNow: true },
     },
     primaryKey: ["userId", "type", "channel"],
   },

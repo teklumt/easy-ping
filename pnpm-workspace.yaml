@@ -7,3 +7,7 @@ allowBuilds:
   # Next's optional image optimiser. The example is typechecked, never run,
   # so its native binary is dead weight.
   sharp: false
+
+# Next pins an old postcss with four open advisories (map-file disclosure). 8.5.x is API-compatible.
+overrides:
+  "postcss@<8.5.23": ">=8.5.23"

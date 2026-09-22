@@ -132,8 +132,8 @@ describe.skipIf(!available)("BUG G / BUG I: request hardening and seen semantics
   const build = () =>
     easyPing({
       database: db.adapter,
-      secret: "s",
-      cron: { secret: "c" },
+      secret: "test-signing-secret-0123456789",
+      cron: { secret: "test-cron-secret-0123456789" },
       session: { getUserId: async () => "u1" },
       getRecipients: async (ids) => ids.map(recipient),
       notifications: definitions,

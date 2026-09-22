@@ -1,13 +1,31 @@
 import type { Backoff } from "./backoff";
-import type { EasyPing, EasyPingConfig, HealthReport, SendArgs, SendResult } from "./config";
+import type {
+  EasyPing,
+  EasyPingConfig,
+  HealthReport,
+  MountedRoute,
+  SendArgs,
+  SendResult,
+} from "./config";
 import type { NotificationDefinitions } from "./definition";
 import { ConfigError, consoleLogger } from "./errors";
 import { createHandler } from "./handler";
 import type { AnyPlugin } from "./plugin";
+import { createRateLimiter } from "./rate-limit";
 import { createRunner } from "./runner";
 import { isChannelUsable, runSend } from "./send";
 import { createPluginStore } from "./store";
+import { createScopedSigner } from "./tokens";
 import type { DeliveryMode } from "./types";
+
+const CORE_ROUTES: readonly MountedRoute[] = [
+  { method: "GET", path: "/", scope: { type: "user" }, owner: "core" },
+  { method: "GET", path: "/count", scope: { type: "user" }, owner: "core" },
+  { method: "POST", path: "/seen", scope: { type: "user" }, owner: "core" },
+  { method: "POST", path: "/read", scope: { type: "user" }, owner: "core" },
+  { method: "POST", path: "/read-all", scope: { type: "user" }, owner: "core" },
+  { method: "POST", path: "/cron", scope: { type: "machine" }, owner: "core" },
+];
 
 const DEFAULTS = {
   maxAttempts: 5,
@@ -16,6 +34,33 @@ const DEFAULTS = {
   basePath: "/api/notifications",
   mode: "cron" as DeliveryMode,
 };
+
+export const MIN_SECRET_LENGTH = 16;
+
+const PLACEHOLDER_SECRETS = new Set([
+  "secret",
+  "changeme",
+  "change-me",
+  "replace-me",
+  "replace-me-too",
+  "password",
+  "demo-signing-secret",
+  "demo-cron-secret",
+]);
+
+/**
+ * `secret` keys the HMAC behind every unsubscribe link; `cron.secret` is the
+ * only thing between the internet and a flush of your email provider. A short
+ * or placeholder value is a startup error, because it ships otherwise.
+ */
+function checkSecretStrength(name: string, value: string) {
+  if (value.length < MIN_SECRET_LENGTH || PLACEHOLDER_SECRETS.has(value.toLowerCase())) {
+    throw new ConfigError(
+      `\`${name}\` must be at least ${MIN_SECRET_LENGTH} characters and not a placeholder. ` +
+        "Generate one with `openssl rand -base64 32`.",
+    );
+  }
+}
 
 function validate(config: EasyPingConfig<NotificationDefinitions>, plugins: readonly AnyPlugin[]) {
   if (!config.database) throw new ConfigError("`database` is required.");
@@ -35,6 +80,13 @@ function validate(config: EasyPingConfig<NotificationDefinitions>, plugins: read
       "`secret` is required — it signs unsubscribe and other session-less links. " +
         "Adding it later is a breaking change, so it is mandatory from the start.",
     );
+  }
+  checkSecretStrength("secret", config.secret);
+  if (config.cron?.secret) checkSecretStrength("cron.secret", config.cron.secret);
+  if (config.machineSecret) checkSecretStrength("machineSecret", config.machineSecret);
+
+  if (config.rateLimit && (config.rateLimit.max < 1 || config.rateLimit.windowMs < 1)) {
+    throw new ConfigError("`rateLimit.max` and `rateLimit.windowMs` must both be positive.");
   }
 
   if (typeof config.getRecipients !== "function") {
@@ -130,6 +182,19 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     );
   }
 
+  // The escape hatch stays visible: every custom-scoped route is named at
+  // startup with the reason its author gave. RFC 0002 §3.
+  for (const plugin of plugins) {
+    for (const route of plugin.routes ?? []) {
+      if (route.scope.type === "custom") {
+        warnings.push(
+          `plugin "${plugin.id}" mounts ${route.method} ${route.path} with custom auth: ` +
+            route.scope.justification,
+        );
+      }
+    }
+  }
+
   for (const warning of warnings) logger.warn(warning);
 
   const runner = createRunner({
@@ -154,7 +219,15 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     secret: config.secret,
     basePath: config.basePath ?? DEFAULTS.basePath,
     pluginRoutes,
+    trustedOrigins: config.trustedOrigins,
+    onRequest: config.onRequest,
+    maxBodyBytes: config.maxBodyBytes,
+    rateLimit: config.rateLimit ? createRateLimiter(config.rateLimit) : undefined,
+    cronMaxSweeps: config.cron?.maxSweeps,
     ...(config.cron?.secret ? { cronSecret: config.cron.secret } : {}),
+    ...((config.machineSecret ?? config.cron?.secret)
+      ? { machineSecret: config.machineSecret ?? config.cron?.secret }
+      : {}),
   });
 
   async function send<TKey extends keyof TDefs & string>(
@@ -199,10 +272,21 @@ export function easyPing<TDefs extends NotificationDefinitions>(
 
   // After send() exists, before any hook or route can run.
   for (const plugin of plugins) {
+    const purposes = new Set(
+      (plugin.routes ?? []).flatMap((route) =>
+        route.scope.type === "signed" ? [route.scope.purpose] : [],
+      ),
+    );
     plugin.init?.({
       store: createPluginStore(plugin.id, plugin.schema, config.database, tablePrefix),
-      secret: config.secret,
+      sign: createScopedSigner(
+        config.secret,
+        plugin.id,
+        purposes,
+        (message) => new ConfigError(message),
+      ),
       logger,
+      notificationTypes: Object.keys(config.notifications),
       getRecipients: config.getRecipients,
       send: (type, args) => send(type as keyof TDefs & string, args as never) as Promise<unknown>,
     });
@@ -213,6 +297,18 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     handler,
 
     startWorker: (options) => runner.startWorker(options ?? {}),
+
+    listRoutes: () => [
+      ...CORE_ROUTES.filter((route) => route.path !== "/cron" || Boolean(config.cron?.secret)),
+      ...plugins.flatMap((plugin) =>
+        (plugin.routes ?? []).map((route) => ({
+          method: route.method,
+          path: route.path,
+          scope: route.scope,
+          owner: plugin.id,
+        })),
+      ),
+    ],
 
     getFailedDeliveries: (options = {}) =>
       config.database.getFailedDeliveries({

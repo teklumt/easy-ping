@@ -20,7 +20,7 @@ import { waitUntil } from "./helpers/wait";
  */
 
 const SECRET = "e2e-signing-secret";
-const CRON_SECRET = "e2e-cron-secret";
+const CRON_SECRET = "e2e-cron-secret-0123456789";
 
 const definitions = {
   commentReply: { channels: ["inApp"] },
