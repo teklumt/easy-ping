@@ -1,10 +1,15 @@
 # easy-ping
 
+[![npm](https://img.shields.io/npm/v/easy-ping?color=%23e0362a&label=npm)](https://www.npmjs.com/package/easy-ping)
+[![install size](https://packagephobia.com/badge?p=easy-ping)](https://packagephobia.com/result?p=easy-ping)
+[![node](https://img.shields.io/node/v/easy-ping)](https://www.npmjs.com/package/easy-ping)
+[![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
+
 **Own your notifications.** Your database, your users, no per-notification pricing.
 
 A framework-agnostic, type-safe, self-hosted notifications library for TypeScript — in-app inbox, transactional email, and a plugin system for the rest.
 
-> **Status: pre-release (v0.0.0).** The core pipeline, both adapters (Postgres and MongoDB), the React client, and the preferences, digests and push plugins all work and are covered by tests against real databases. Web push is verified end to end against Mozilla's production push service and cross-checked against `http_ece`. Realtime and batching are not built, and the Resend provider has still only been exercised against a stub. APIs may still move.
+> **Status: published, pre-1.0.** The core pipeline, all three adapters (Postgres through any driver, Postgres via Drizzle, and MongoDB), the React client, and the preferences, digests and push plugins all work and are covered by tests against real databases. Web push is verified end to end against Mozilla's production push service and cross-checked against `http_ece`. Realtime and batching are not built, and the Resend provider has still only been exercised against a stub. Minor versions may still move APIs before 1.0.
 
 ---
 
