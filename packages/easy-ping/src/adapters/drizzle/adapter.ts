@@ -294,7 +294,12 @@ export function drizzleAdapter(
 
       const values = releases.map(({ id, outcome, nextAttemptAt }) => {
         const retryable = outcome.result === "failed" && outcome.retryable;
-        const error = outcome.result === "failed" ? outcome.error.slice(0, 2000) : null;
+        const error =
+          outcome.result === "failed"
+            ? outcome.error.slice(0, 2000)
+            : outcome.result === "skipped"
+              ? outcome.reason.slice(0, 2000)
+              : null;
 
         return sql`(
           ${id}::text,
@@ -312,10 +317,14 @@ export function drizzleAdapter(
         UPDATE ${DELIVERY} d
         SET status = CASE
               WHEN v.result = 'sent' THEN 'sent'
+              WHEN v.result = 'skipped' THEN 'skipped'
               WHEN v.retryable AND d.attempts + 1 < d.max_attempts THEN 'pending'
               ELSE 'failed'
             END,
-            attempts = CASE WHEN v.result = 'sent' THEN d.attempts ELSE d.attempts + 1 END,
+            attempts = CASE
+              WHEN v.result IN ('sent', 'skipped') THEN d.attempts
+              ELSE d.attempts + 1
+            END,
             last_error = v.error,
             not_before = COALESCE(v.not_before, d.not_before),
             claimed_at = NULL,

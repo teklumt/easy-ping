@@ -353,6 +353,41 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
   },
 
   {
+    // The whole point of the status: a delivery with nothing to do must not
+    // show up in the view an operator reads to find real breakage.
+    name: "a skipped delivery is terminal and stays out of getFailedDeliveries",
+    run: async (ctx) => {
+      const seeded = await seed(ctx, { maxAttempts: 5 });
+      const id = seeded.rows[0]?.deliveries[0]?.id;
+      assert(id, "seed produced no delivery");
+
+      await ctx.adapter.claimPendingDeliveries({ ...CLAIM, claimToken: uid("t") });
+      await ctx.adapter.releaseDeliveries([
+        {
+          id,
+          claimToken: "t",
+          outcome: { result: "skipped", reason: "no registered devices" },
+        },
+      ]);
+
+      const failed = await ctx.adapter.getFailedDeliveries({
+        since: new Date(Date.now() - 60_000),
+        limit: 50,
+      });
+      assert(!failed.some((row) => row.id === id), "a skipped delivery was reported as failed");
+
+      // Terminal: it must never be handed out again, or a user with no devices
+      // is retried on every sweep forever.
+      const reclaimed = await ctx.adapter.claimPendingDeliveries({
+        ...CLAIM,
+        claimToken: uid("t"),
+        now: new Date(Date.now() + 3_600_000),
+      });
+      assert(!reclaimed.some((row) => row.id === id), "a skipped delivery was claimed again");
+    },
+  },
+
+  {
     name: "duplicate dedupeKey is skipped, not thrown",
     run: async (ctx) => {
       const userId = uid("user");

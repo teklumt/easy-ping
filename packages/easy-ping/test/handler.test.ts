@@ -91,6 +91,39 @@ describe.skipIf(!available)("route handler", () => {
     expect(body.notifications[0]?.userId).toBe("u1");
   });
 
+  it("carries unseenCount on the first page so a poll costs one request", async () => {
+    const notify = build();
+    await notify.send("inAppOnly", { to: "u1", payload: {} });
+
+    const body = (await (await notify.handler.GET(get("/"))).json()) as {
+      notifications: unknown[];
+      unseenCount?: number;
+    };
+
+    expect(body.unseenCount).toBe(1);
+  });
+
+  it("omits unseenCount when paginating, because that is scrollback not a poll", async () => {
+    const notify = build();
+    await notify.send("inAppOnly", { to: "u1", payload: {} });
+    await notify.send("inAppOnly", { to: "u1", payload: {} });
+
+    const first = (await (await notify.handler.GET(get("/?limit=1"))).json()) as {
+      nextCursor: string | null;
+      unseenCount?: number;
+    };
+    expect(first.unseenCount).toBe(2);
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = (await (
+      await notify.handler.GET(
+        get(`/?limit=1&cursor=${encodeURIComponent(first.nextCursor ?? "")}`),
+      )
+    ).json()) as { unseenCount?: number };
+
+    expect(second.unseenCount).toBeUndefined();
+  });
+
   it("counts unseen and clears it via /seen", async () => {
     const notify = build();
     await notify.send("inAppOnly", { to: "u1", payload: {} });

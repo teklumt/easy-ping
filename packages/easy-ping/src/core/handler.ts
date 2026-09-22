@@ -146,13 +146,20 @@ export function createHandler(deps: HandlerDeps) {
       const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 20;
       const cursor = url.searchParams.get("cursor");
 
-      const page = await deps.adapter.listNotifications({
-        userId,
-        limit,
-        ...(cursor ? { cursor } : {}),
-        ...(url.searchParams.get("unreadOnly") === "true" ? { unreadOnly: true } : {}),
-      });
-      return json(page);
+      // The badge count rides along with the first page, so a polling client
+      // needs one request per tick instead of two. Paginating past the first
+      // page omits it: a cursor request is scrollback, not a poll.
+      const [page, unseenCount] = await Promise.all([
+        deps.adapter.listNotifications({
+          userId,
+          limit,
+          ...(cursor ? { cursor } : {}),
+          ...(url.searchParams.get("unreadOnly") === "true" ? { unreadOnly: true } : {}),
+        }),
+        cursor ? Promise.resolve(null) : deps.adapter.countUnseen(userId),
+      ]);
+
+      return json(unseenCount === null ? page : { ...page, unseenCount });
     }
 
     if (request.method === "GET" && path === "/count") {

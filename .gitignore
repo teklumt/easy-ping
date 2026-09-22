@@ -11,3 +11,6 @@ coverage/
 # Copied from the repo root on prepack so the npm page is not blank.
 packages/easy-ping/README.md
 packages/easy-ping/LICENSE
+
+# Local pack output, used to test a build in a real app before publishing.
+*.tgz

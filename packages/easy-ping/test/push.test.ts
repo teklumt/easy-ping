@@ -229,16 +229,25 @@ describe.skipIf(!available)("push plugin", () => {
       expect(failed[0]?.attempts).toBe(1);
     });
 
-    it("fails without retrying when the user has no devices", async () => {
+    it("skips rather than fails when the user has no devices", async () => {
       const notify = build();
       await notify.send("ping", { to: "u1", payload: {} });
-      await runCron(notify);
+      const result = (await (await runCron(notify)).json()) as {
+        sent: number;
+        failed: number;
+        skipped: number;
+      };
 
+      expect(result.skipped).toBe(1);
+      expect(result.failed).toBe(0);
+
+      // The point of the status: an opt-out must not fill the view an operator
+      // reads to find real breakage.
       const failed = await db.adapter.getFailedDeliveries({
         since: new Date(Date.now() - 60_000),
         limit: 10,
       });
-      expect(failed[0]?.lastError).toContain("no registered devices");
+      expect(failed).toHaveLength(0);
     });
 
     it("carries the rendered content and the notification id", async () => {
@@ -254,16 +263,24 @@ describe.skipIf(!available)("push plugin", () => {
 
     it("does not hold up in-app delivery when push fails", async () => {
       const notify = build();
+      // A device must exist, or push short-circuits on "no devices" and the
+      // provider below is never reached.
+      await register(notify, "https://push.example/a");
       behaviour = () => {
         throw new Error("provider down");
       };
 
       await notify.send("both", { to: "u1", payload: {} });
-      const result = (await (await runCron(notify)).json()) as { sent: number; failed: number };
+      const result = (await (await runCron(notify)).json()) as {
+        sent: number;
+        failed: number;
+        skipped: number;
+      };
 
       // inApp lands; push is retried independently.
       expect(result.sent).toBe(1);
       expect(result.failed).toBe(1);
+      expect(result.skipped).toBe(0);
       expect(await db.adapter.countUnseen("u1")).toBe(1);
     });
   });
