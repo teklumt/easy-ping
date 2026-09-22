@@ -44,6 +44,47 @@ for (const statement of renderPostgresDdl(coreSchema)) await sql.unsafe(statemen
 ```
 
 <details>
+<summary>Without an ORM (plain pg, postgres.js, Kysely…)</summary>
+
+```bash
+pnpm add easy-ping pg zod
+```
+
+```ts
+import { postgresAdapter } from "easy-ping/adapters/postgres";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const database = postgresAdapter(
+  async (text, params) => (await pool.query(text, params as unknown[])).rows,
+  {
+    // Optional, but it is what makes createNotifications atomic.
+    transaction: async (fn) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const result = await fn(async (t, p) => (await client.query(t, p as unknown[])).rows);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+  },
+);
+```
+
+One function — run a parameterised statement, return rows — is the entire contract.
+Anything that can do that works: `pg`, `postgres.js`, Kysely, Neon or PlanetScale's
+serverless drivers, or Prisma's `$queryRawUnsafe`.
+
+</details>
+
+<details>
 <summary>On MongoDB instead</summary>
 
 ```bash
@@ -284,8 +325,9 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | | |
 | --- | --- |
 | ✅ Core `send()` pipeline, hooks, dedupe | |
-| ✅ Postgres via Drizzle, with a conformance suite | |
-| ✅ MongoDB, same conformance suite | |
+| ✅ Postgres through any driver — no ORM needed | `pg`, `postgres.js`, Kysely, Neon… |
+| ✅ Postgres via Drizzle, for those already on it | same conformance suite |
+| ✅ MongoDB | same conformance suite |
 | ✅ Delivery runner, all four modes, retry + backoff | |
 | ✅ Resend provider | |
 | ✅ Route handler, session scoping, cron | |

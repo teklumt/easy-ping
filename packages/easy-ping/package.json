@@ -1,6 +1,6 @@
 {
   "name": "easy-ping",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-hosted, type-safe notifications for TypeScript apps. Your database, your users.",
   "license": "MIT",
   "author": "Teklu Moges",
@@ -58,6 +58,11 @@
       "types": "./dist/adapters/mongodb.d.ts",
       "import": "./dist/adapters/mongodb.js",
       "require": "./dist/adapters/mongodb.cjs"
+    },
+    "./adapters/postgres": {
+      "types": "./dist/adapters/postgres.d.ts",
+      "import": "./dist/adapters/postgres.js",
+      "require": "./dist/adapters/postgres.cjs"
     },
     "./schema": {
       "types": "./dist/schema.d.ts",

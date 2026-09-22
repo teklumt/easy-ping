@@ -5,6 +5,7 @@
 // package shipped claiming >=18 until CI happened to prove otherwise.
 
 import { mongoAdapter } from "../dist/adapters/mongodb.js";
+import { postgresAdapter } from "../dist/adapters/postgres.js";
 import { createNotifyClient } from "../dist/client.js";
 import { expiresIn, signToken, verifyToken } from "../dist/index.js";
 import { coreSchema, renderDrizzleSchema, renderPostgresDdl } from "../dist/schema.js";
@@ -45,6 +46,9 @@ check("createNotifyClient", typeof createNotifyClient({}).subscribe === "functio
 // The mongo adapter takes the driver structurally, so it must construct with
 // no `mongodb` installed. Importing it is the check.
 check("mongoAdapter", mongoAdapter({ collection: () => ({}) }).name === "mongodb");
+
+// Takes a bare query function, so it must construct with no driver at all.
+check("postgresAdapter", postgresAdapter(async () => []).name === "postgres");
 
 if (failures.length > 0) {
   console.error(`node ${process.version}: ${failures.length} failure(s)`);
