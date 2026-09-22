@@ -9,8 +9,10 @@ concurrency: release
 permissions:
   contents: write
   pull-requests: write
-  # id-token: write goes back here together with `publish:` below, once npm
-  # trusted publishing is enabled. Until then it is an unused OIDC grant.
+  # Mints the short-lived OIDC token npm exchanges for publish rights. No npm
+  # token is stored anywhere; the trust is configured on npmjs.com against
+  # this repository and this workflow file.
+  id-token: write
 
 jobs:
   release:
@@ -41,24 +43,22 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
-      # Only maintains the version PR. `publish` is deliberately absent:
+      # Maintains the version PR, and on merge publishes and tags.
       #
-      # npm trusted publishing (OIDC) cannot create a package that does not
-      # exist yet — a trusted publisher is configured on an existing package,
-      # so there is nothing to attach it to. The registry rejects that first
-      # PUT as E404, which reads like "name taken" and is not.
+      # `publish` was absent until 0.4.0 because npm trusted publishing cannot
+      # create a package that does not exist yet — a trusted publisher is
+      # configured on an existing package, so the first PUT is rejected as
+      # E404, which reads like "name taken" and is not. easy-ping exists now
+      # and a trusted publisher is configured, so OIDC takes over from here.
       #
-      # The first release must therefore be published by hand:
-      #
-      #   npm login
-      #   pnpm --filter easy-ping publish --access public
-      #
-      # then enable trusted publishing on npmjs.com for this repo and workflow
-      # and re-add `publish: pnpm changeset publish` below.
+      # This also tags the release and opens a GitHub Release from the
+      # changelog, which is what puts a version in the repo sidebar.
       - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm changeset version
+          publish: pnpm changeset publish
           commit: "chore: release"
           title: "chore: release"
+          createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
