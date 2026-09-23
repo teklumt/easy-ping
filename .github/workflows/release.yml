@@ -29,10 +29,16 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          # pnpm 11 requires >= 22.13 (it loads node:sqlite).
+          # pnpm 11 requires >= 22.13 (it loads node:sqlite); trusted publishing
+          # needs >= 22.14, which the 22 line satisfies.
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+          # No `registry-url`. It makes setup-node write an .npmrc containing
+          # `_authToken=${NODE_AUTH_TOKEN}` and set NODE_AUTH_TOKEN to its dummy
+          # placeholder, so pnpm sends that garbage as a bearer token and never
+          # reaches the OIDC exchange. npm masks the rejection as E404, which is
+          # what killed the 0.5.0 publish. registry.npmjs.org is the default
+          # anyway, so nothing is lost by leaving it out.
 
       - run: pnpm install --frozen-lockfile
 
