@@ -11,7 +11,7 @@ database, with no per-notification bill.
 [![node](https://img.shields.io/node/v/easy-ping)](https://www.npmjs.com/package/easy-ping)
 [![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
 
-[Documentation](https://easy-notify-website.vercel.app) · [Quickstart](https://easy-notify-website.vercel.app/docs/quickstart) · [Changelog](https://easy-notify-website.vercel.app/docs/changelog) · [AI context](https://easy-notify-website.vercel.app/docs/ai-assistant)
+[Documentation](https://easy-ping.teklumoges.dev) · [Quickstart](https://easy-ping.teklumoges.dev/docs/quickstart) · [Changelog](https://easy-ping.teklumoges.dev/docs/changelog) · [AI context](https://easy-ping.teklumoges.dev/docs/ai-assistant)
 
 </div>
 
