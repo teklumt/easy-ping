@@ -1,5 +1,12 @@
 # example-next-drizzle
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [[`bd64257`](https://github.com/teklumt/easy-ping/commit/bd642575bf9b4f8ea91405aeea066bff4a05c535), [`bd64257`](https://github.com/teklumt/easy-ping/commit/bd642575bf9b4f8ea91405aeea066bff4a05c535)]:
+  - easy-ping@0.5.0
+
 ## 0.0.4
 
 ### Patch Changes

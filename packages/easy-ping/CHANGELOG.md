@@ -1,5 +1,36 @@
 # easy-ping
 
+## 0.5.0
+
+### Minor Changes
+
+- [`bd64257`](https://github.com/teklumt/easy-ping/commit/bd642575bf9b4f8ea91405aeea066bff4a05c535) Thanks [@teklumt](https://github.com/teklumt)! - MySQL and SQLite adapters.
+
+  - `mysqlAdapter(query, { prefix?, transaction? })` from `easy-ping/adapters/mysql`, with `mysql2Query(pool)`, `mysqlTransaction(pool)` and `createMysqlTables(query, { plugins? })`. MySQL 8 or MariaDB. With `transaction` a claim uses `FOR UPDATE SKIP LOCKED`; without it a lock-free `UPDATE … JOIN (SELECT … LIMIT)` that re-checks eligibility on the locked row, so two sweeps can never take the same delivery. Create the pool with `timezone: "Z"`.
+  - `sqliteAdapter(query, { prefix?, transaction? })` from `easy-ping/adapters/sqlite`, with `sqliteQuery(db)`, `sqliteTransaction(db)` and `createSqliteTables(query, { plugins? })`. Works with `node:sqlite` (Node 22.13+), better-sqlite3 or anything with the same `prepare().all()/.run()` shape. Nothing is imported at module level, so the package's Node 20 floor holds.
+  - `renderMysqlDdl` and `renderSqliteDdl` from `easy-ping/schema`. MySQL string columns become `VARCHAR(768)` when they are a single-column key, `VARCHAR(255)` in a composite key or when they carry a default, and `TEXT` otherwise, inside InnoDB's 3072-byte key limit; indexes are declared inline because MySQL has no `CREATE INDEX IF NOT EXISTS`.
+  - The query contract for both is `(text, params) => Promise<{ rows, affectedRows }>`, since MySQL has no `RETURNING`. `PluginStore.update` on MySQL returns rows changed, not matched, unless the pool sets `FOUND_ROWS`.
+  - Both run the full conformance, plugin-store and end-to-end suites alongside the Postgres and MongoDB backends. The plugin store now coerces `0/1` to booleans for date-less engines.
+  - No additive migration planner for these dialects yet; `createMysqlTables` and `createSqliteTables` are bootstrap only.
+
+### Patch Changes
+
+- [`bd64257`](https://github.com/teklumt/easy-ping/commit/bd642575bf9b4f8ea91405aeea066bff4a05c535) Thanks [@teklumt](https://github.com/teklumt)! - Fix `planPostgresMigration` silently doing nothing on an existing database.
+
+  `INTROSPECT_SQL` returns `table_name`/`column_name`/`data_type`/`is_nullable`, but `LiveColumn` is
+  `table`/`column`/`type`/`nullable`, and the planner read the short names. Passing the exported
+  query's rows straight through — which "so callers need not retype it" invites — built a map keyed
+  on `undefined`, so every existing table looked new. The plan came back as `CREATE TABLE IF NOT
+EXISTS` against tables that already exist, which is a no-op, with no `ALTER TABLE ADD COLUMN` at
+  all and an empty `unsupported` list. It reported success and changed nothing.
+
+  The practical effect: anyone upgrading to 0.4.0 by the documented path did not get
+  `notification_preference.updated_at`, so unsubscribe-freshness checks had no column to read.
+
+  The planner now accepts either shape, so raw rows and hand-mapped rows both work. Every existing
+  test mapped the names by hand before calling it, which is why this survived; the new case passes
+  the rows through untouched.
+
 ## 0.4.0
 
 ### Minor Changes
