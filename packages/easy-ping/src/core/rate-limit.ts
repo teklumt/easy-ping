@@ -2,11 +2,7 @@ export type RateLimitConfig = {
   /** Requests allowed per key per window. */
   max: number;
   windowMs: number;
-  /**
-   * Which bucket a request lands in. Defaults to the client address as the
-   * usual proxy headers report it; returning null exempts the request. Behind
-   * no proxy those headers are absent, so supply your own key there.
-   */
+  /** Bucket key. Defaults to the client address from proxy headers; null exempts the request. */
   key?: (request: Request) => string | null;
 };
 
@@ -20,12 +16,7 @@ const clientAddress = (request: Request): string | null => {
   );
 };
 
-/**
- * Fixed-window counter held in process memory. Per isolate on edge runtimes
- * and per replica anywhere else, so it bounds one client's cost to one
- * process rather than enforcing a global quota. That is enough to blunt
- * secret guessing and poll storms, which is what it is for.
- */
+/** Fixed window in process memory: per isolate or replica, so a bound rather than a quota. */
 export function createRateLimiter(config: RateLimitConfig): (request: Request) => Response | null {
   const keyOf = config.key ?? clientAddress;
   const buckets = new Map<string, { count: number; resetAt: number }>();
@@ -37,8 +28,7 @@ export function createRateLimiter(config: RateLimitConfig): (request: Request) =
 
     const now = Date.now();
 
-    // Drop expired buckets no more than once per window, so memory tracks
-    // active clients rather than everyone ever seen.
+    // Sweep expired buckets at most once per window.
     if (now - lastSweep > config.windowMs) {
       for (const [id, bucket] of buckets) if (bucket.resetAt <= now) buckets.delete(id);
       lastSweep = now;

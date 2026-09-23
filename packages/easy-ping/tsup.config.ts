@@ -22,6 +22,8 @@ export default defineConfig([
       "adapters/drizzle": "src/adapters/drizzle/index.ts",
       "adapters/mongodb": "src/adapters/mongodb/index.ts",
       "adapters/postgres": "src/adapters/postgres/index.ts",
+      "adapters/mysql": "src/adapters/mysql/index.ts",
+      "adapters/sqlite": "src/adapters/sqlite/index.ts",
       schema: "src/schema/index.ts",
       testing: "src/testing/index.ts",
       "providers/resend": "src/providers/resend/index.ts",

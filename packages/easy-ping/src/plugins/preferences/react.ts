@@ -70,8 +70,7 @@ export function usePreferences(options: UsePreferencesOptions = {}): UsePreferen
     async (input: UpdatePreferenceInput, optimistic: Partial<PreferenceView>) => {
       const previous = preferences;
 
-      // A preference toggle that lags behind the network feels broken, so
-      // apply immediately and revert if the write fails.
+      // Optimistic: apply now, revert on failure.
       setPreferences((rows) => {
         const existing = rows.find((row) => matches(row, input));
         if (existing) {

@@ -59,8 +59,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let consecutiveFailures = 0;
 
-  // Bumped per mutation: an in-flight poll returns pre-mutation data, which
-  // would silently revert the optimistic update.
+  // Bumped per mutation so an in-flight poll cannot revert an optimistic update.
   let generation = 0;
 
   function set(patch: Partial<NotifyState>) {
@@ -82,9 +81,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   async function refresh(): Promise<void> {
     const startedAt = generation;
 
-    // One request, not two. The feed carries unseenCount for a first page,
-    // which is every poll. A server too old to send it still works: the
-    // fallback asks /count the way this always used to.
+    // One request per poll; /count is only the fallback for a server too old to send unseenCount.
     const page = await request<{
       notifications: NotificationView[];
       nextCursor: string | null;
@@ -93,9 +90,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
 
     const unseenCount = page.unseenCount ?? (await request<{ unseen: number }>("/count")).unseen;
 
-    // A mutation landed while this was in flight, so the response is already
-    // stale. Dropping it is correct: the mutation's own optimistic state is
-    // newer, and the next poll will reconcile.
+    // A mutation landed while this was in flight; the response is stale.
     if (generation !== startedAt) return;
 
     set({
@@ -112,8 +107,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   async function loadMore(): Promise<void> {
     if (!state.nextCursor) return;
 
-    // Two clicks before the first response lands would both read the same
-    // cursor and append the same page twice. Share the in-flight request.
+    // Share the in-flight request so two clicks cannot append the same page twice.
     if (loadingMore) return loadingMore;
 
     const cursor = state.nextCursor;
@@ -125,8 +119,6 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
           nextCursor: string | null;
         }>(`/?limit=${limit}&cursor=${encodeURIComponent(cursor)}`);
 
-        // Guard against a duplicate arriving anyway — a concurrent refresh may
-        // already have pulled some of these into the list.
         const known = new Set(state.notifications.map((row) => row.id));
 
         set({
@@ -184,8 +176,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   }
 
   async function markSeen(): Promise<void> {
-    // Only what the user could actually have seen. Sending no cutoff would
-    // mark notifications that landed after the last poll as seen too.
+    // Only what the user could have seen: no cutoff would mark newer arrivals seen too.
     const newest = state.notifications[0]?.createdAt;
 
     await optimistic(
@@ -205,8 +196,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   }
 
   async function tick() {
-    // A hidden tab still holds an open bell. Polling it burns requests for a
-    // UI nobody is looking at.
+    // A hidden tab is not looking at the bell.
     if (isHidden()) {
       schedule(pollIntervalMs);
       return;
@@ -220,8 +210,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
       set({ isLoading: false, error: error instanceof Error ? error : new Error(String(error)) });
     }
 
-    // Back off on failure so an outage does not turn every open tab into a
-    // retry loop against a struggling server.
+    // Back off on failure so an outage does not become a retry storm.
     schedule(
       consecutiveFailures === 0
         ? pollIntervalMs
@@ -233,8 +222,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
     listeners.add(listener);
     listener(state);
 
-    // One poller regardless of how many components subscribe — otherwise two
-    // bells, or a StrictMode double-mount, double the request rate.
+    // One poller regardless of how many components subscribe.
     if (listeners.size === 1) void tick();
 
     return () => {

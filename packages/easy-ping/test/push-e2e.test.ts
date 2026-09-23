@@ -14,19 +14,7 @@ import {
   verifyVapidHeader,
 } from "./helpers/web-push";
 
-/**
- * Push through the whole stack: send() to runner to plugin to provider to a
- * real HTTP POST, decrypted by the receiver.
- *
- * The unit tests cover each link. This covers the joins, which is where
- * plumbing errors live: a header dropped by the runner, a body mangled between
- * provider and socket, an endpoint the plugin stored wrong.
- *
- * Run against every reachable backend: the device registry goes through the
- * plugin store, which is where the SQL and document dialects diverge.
- *
- * Left unproven: a real FCM or autopush endpoint, which needs a browser.
- */
+// Push through the whole stack to a real HTTP POST, decrypted by the receiver.
 
 type Received = {
   path: string;

@@ -111,9 +111,7 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
       resolveChannels: (context: ResolveChannelsContext) => {
         if (alwaysSend.has(context.type)) return context.decisions;
 
-        // prepare() failing leaves this undefined. Fail closed rather than
-        // assuming everyone opted in: that is exactly how people who
-        // unsubscribed get emailed anyway.
+        // prepare() failed: fail closed rather than assume everyone opted in.
         if (!(context.prepared instanceof Map)) {
           return context.decisions.map((decision) => ({ ...decision, action: "skip" as const }));
         }
@@ -150,8 +148,7 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
 
           const bad = (error: string) => Response.json({ error }, { status: 400 });
 
-          // Only types the app defined: otherwise every unknown string the
-          // client invents is a row that lives forever.
+          // Only configured types, or every invented string becomes a row.
           if (typeof body.type !== "string" || !ctx.notificationTypes.includes(body.type)) {
             return bad("type must be a configured notification type");
           }
@@ -177,8 +174,7 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
       },
 
       {
-        // Reached from a mail client with no session, so it is authenticated
-        // by the signature on the link itself.
+        // No session in a mail client; the link carries the proof.
         path: "/unsubscribe",
         method: "POST",
         scope: { type: "signed", purpose: UNSUBSCRIBE_PURPOSE },
@@ -200,8 +196,7 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
             return Response.json({ ok: true, unsubscribed: { type, channel } });
           }
 
-          // The user changed this preference after the email went out. An old
-          // link must not silently undo a newer decision made while logged in.
+          // Changed after the email went out: an old link must not undo a newer decision.
           if (
             current?.updatedAt &&
             claims.iat !== undefined &&
@@ -218,8 +213,7 @@ export function preferences(options: PreferencesOptions = {}): EasyPingPlugin<"p
             frequency: "off",
           });
 
-          // Gmail and Yahoo one-click requires the POST itself to unsubscribe,
-          // with no confirmation page.
+          // One-click (Gmail, Yahoo) requires the POST itself to unsubscribe.
           return Response.json({ ok: true, unsubscribed: { type, channel } });
         },
       },

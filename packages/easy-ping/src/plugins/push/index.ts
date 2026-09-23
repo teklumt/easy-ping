@@ -56,23 +56,13 @@ export type PushOptions = {
   staleAfterDays?: number;
   /** Registering past this evicts the user's least recently seen device. Default 20. */
   maxDevicesPerUser?: number;
-  /**
-   * Hostnames an endpoint may point at, e.g. `["fcm.googleapis.com",
-   * "*.notify.windows.com"]`. Unset accepts any public https host, which is
-   * what self-hosted UnifiedPush distributors need.
-   */
+  /** Hostnames an endpoint may point at, e.g. `["fcm.googleapis.com", "*.notify.windows.com"]`. Unset allows any public https host. */
   allowedEndpointHosts?: readonly string[];
   /** Accepts http and private hosts. For a local fake push service only; never in production. */
   allowInsecureEndpoints?: boolean;
 };
 
-/**
- * The tables this plugin owns, as a standalone value.
- *
- * Exported separately from `push()` so DDL can be rendered without building a
- * plugin instance — otherwise creating the tables means inventing a provider
- * and a render function you never intend to call.
- */
+/** The tables this plugin owns, exported so DDL needs no plugin instance. */
 export const pushSchema = {
   pushDevice: {
     tableName: DEVICE,
@@ -89,8 +79,7 @@ export const pushSchema = {
     primaryKey: ["id"],
     indexes: [
       { on: ["userId"], name: "push_device_user_idx" },
-      // One row per endpoint: re-registering the same browser must update,
-      // not duplicate, or every send goes out N times to one device.
+      // One row per endpoint: re-registering updates instead of duplicating.
       { on: ["endpoint"], unique: true, name: "push_device_endpoint_idx" },
     ],
   },
@@ -115,10 +104,7 @@ const hostAllowed = (host: string, allowed: readonly string[]) =>
     entry.startsWith("*.") ? host.endsWith(entry.slice(1)) : host === entry.toLowerCase(),
   );
 
-/**
- * The server will POST to whatever is stored here, so this is the SSRF
- * boundary: public https only, optionally pinned to known push services.
- */
+/** The SSRF boundary: the server POSTs to whatever is stored here. */
 export function validateEndpoint(
   endpoint: string,
   allowedHosts?: readonly string[] | undefined,
@@ -161,14 +147,7 @@ const isDuplicate = (error: unknown): boolean => {
   return /duplicate|unique/i.test(text);
 };
 
-/**
- * Web push over the device registry.
- *
- * Tokens are per device, not per user, so a delivery fans out and succeeds if
- * any endpoint accepts. Endpoints that report themselves gone are deleted
- * immediately: an unpruned registry accumulates dead subscriptions forever and
- * every send slows down behind them.
- */
+/** Web push over the device registry. Fans out per device; gone endpoints are pruned immediately. */
 export function push(options: PushOptions): EasyPingPlugin<"push"> {
   let ctx: PluginInitContext;
   const staleAfterDays = options.staleAfterDays ?? 180;
@@ -200,8 +179,7 @@ export function push(options: PushOptions): EasyPingPlugin<"push"> {
           payload: context.notification.payload,
         });
 
-        // In parallel: one dead endpoint must not hold the others, or the
-        // sweep, up to the runner's timeout.
+        // In parallel: one dead endpoint must not hold the sweep to the timeout.
         const results = await Promise.allSettled(
           devices.map((device) =>
             options.provider.send({
@@ -286,9 +264,7 @@ export function push(options: PushOptions): EasyPingPlugin<"push"> {
           const now = new Date();
           const userAgent = request.headers.get("user-agent")?.slice(0, 512) ?? null;
 
-          // An endpoint belongs to exactly one account for its whole life.
-          // Upserting on endpoint alone let any caller re-home another user's
-          // device by knowing its URL.
+          // An endpoint belongs to one account for life; upserting on endpoint alone let anyone re-home it.
           const [existing] = await ctx.store.find<PushDevice>(DEVICE, { endpoint }, { limit: 1 });
 
           if (existing && existing.userId !== owner) {
@@ -360,8 +336,7 @@ export function push(options: PushOptions): EasyPingPlugin<"push"> {
             return Response.json({ error: "endpoint is required" }, { status: 400 });
           }
 
-          // Scoped by userId as well as endpoint: an endpoint string is not a
-          // secret, and must not let one user unregister another's device.
+          // Scoped by userId too: an endpoint string is not a secret.
           const removed = await ctx.store.remove(DEVICE, { userId: userId ?? "", endpoint });
 
           return removed === 0 ? new Response(null, { status: 404 }) : Response.json({ ok: true });

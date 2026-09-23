@@ -4,11 +4,7 @@ import type { FieldDeclaration, SchemaDeclaration, TableDeclaration } from "./pl
 
 export type Scalar = string | number | boolean | Date | null;
 
-/**
- * One operator per condition. Operators are tagged objects so a bare value is
- * always an equality test; json columns therefore cannot be filtered, since an
- * object value would be ambiguous.
- */
+/** Operators are tagged objects so a bare value is always equality; json columns cannot be filtered. */
 export type WhereCondition =
   | Scalar
   | { in: readonly (string | number)[] }
@@ -27,13 +23,7 @@ export type QueryOptions = {
 
 export type UpsertOptions = { onConflict: readonly string[] };
 
-/**
- * Table access for plugins, scoped to the tables that plugin declared.
- *
- * Plugins could always declare tables via schema() but had no way to read
- * them, so preferences had to bolt its queries onto the core adapter. That
- * does not generalise to digests or push.
- */
+/** Table access for plugins, scoped to the tables the plugin declared. */
 export type PluginStore = {
   find<T = Record<string, unknown>>(
     table: string,
@@ -83,11 +73,7 @@ const isScalar = (value: unknown): value is Scalar =>
   typeof value === "boolean" ||
   value instanceof Date;
 
-/**
- * Types say a condition is a scalar or an operator, but a route that forwards
- * a JSON body has no such guarantee: an object with a `$ne` key is a Mongo
- * operator once it reaches the driver. Refuse anything else at the boundary.
- */
+/** A forwarded JSON body can carry `{ $ne: … }`; refuse anything that is not a scalar or a known operator. */
 function assertCondition(pluginId: string, field: string, condition: unknown): void {
   if (isScalar(condition)) return;
 
@@ -121,11 +107,7 @@ function assertValue(pluginId: string, field: string, spec: FieldDeclaration, va
   );
 }
 
-/**
- * Every table and column a plugin touches is checked against its own
- * declaration. Without this a plugin could read the notification table, and
- * unvalidated identifiers would reach the SQL builder.
- */
+/** Every table and column is checked against the plugin's own declaration. */
 export function createPluginStore(
   pluginId: string,
   schema: SchemaDeclaration | undefined,
@@ -185,10 +167,7 @@ export function createPluginStore(
   // A document store keeps the declared names; a SQL adapter wants columns.
   const column = (field: string) => (storage.naming === "preserve" ? field : toSnakeCase(field));
 
-  /**
-   * json columns must be handed to the driver as text; postgres-js cannot bind
-   * a plain object and the insert fails outright.
-   */
+  // json must reach postgres-js as text.
   const serialize = (table: TableDeclaration, row: Record<string, unknown>) => {
     if (storage.serializesJson === false) return row;
 
@@ -210,18 +189,17 @@ export function createPluginStore(
 
       const rows = await storage.queryTable(qualified(declaration), where, options);
 
-      // SELECT * returns snake_case columns; plugins declare camelCase fields
-      // and type their reads that way. Without this every property is
-      // undefined at runtime while typechecking perfectly.
+      // SELECT * returns snake_case; plugins read camelCase.
       return rows.map((row) => {
         const mapped: Record<string, unknown> = {};
         for (const field of Object.keys(declaration.fields)) {
           const value = row[column(field)];
           const type = declaration.fields[field]?.type;
-          // Drivers differ: some hand back parsed jsonb, some raw text; some
-          // return timestamptz as a Date, postgres.js through Drizzle as text.
+          // Drivers differ on jsonb (parsed or text) and timestamptz (Date or text).
           if (type === "json" && typeof value === "string") mapped[field] = JSON.parse(value);
           else if (type === "date" && typeof value === "string") mapped[field] = new Date(value);
+          // MySQL and SQLite have no boolean column; they hand back 0 and 1.
+          else if (type === "boolean" && typeof value === "number") mapped[field] = value !== 0;
           else mapped[field] = value;
         }
         return mapped;

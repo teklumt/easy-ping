@@ -6,15 +6,7 @@ import ece from "http_ece";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateVapidKeys, webPush } from "../../src/providers/web-push";
 
-/**
- * Checks our aes128gcm against an implementation we did not write.
- *
- * test/helpers/web-push.ts decrypts with code written from the same RFC, so a
- * shared misreading of RFC 8291 would agree with itself and disagree with
- * every browser. http_ece is what the `web-push` npm package — and therefore
- * most of the Node ecosystem — actually uses. Agreeing with it is independent
- * evidence that a real service worker can read what we send.
- */
+// aes128gcm checked against http_ece, an implementation we did not write.
 
 const b64 = (bytes: Buffer | Uint8Array) => Buffer.from(bytes).toString("base64url");
 

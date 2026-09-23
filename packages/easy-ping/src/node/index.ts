@@ -77,8 +77,7 @@ export function toNodeHandler(
       const buffer = response.body ? Buffer.from(await response.arrayBuffer()) : null;
       res.end(buffer ?? undefined);
     } catch (error) {
-      // Respond and swallow. Rethrowing here is an unhandled rejection under
-      // Express, and Node terminates the process on those.
+      // Respond and swallow: a rethrow is an unhandled rejection under Express.
       if (!res.headersSent) res.statusCode = error instanceof BodyTooLargeError ? 413 : 500;
       res.end();
       if (!(error instanceof BodyTooLargeError)) onError(error);

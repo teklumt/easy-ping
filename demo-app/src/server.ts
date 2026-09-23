@@ -6,7 +6,7 @@ import { toNodeHandler } from "easy-ping/node";
 import { preferences } from "easy-ping/plugins/preferences";
 import { push } from "easy-ping/plugins/push";
 import { webPush } from "easy-ping/providers/web-push";
-import { connect, type Driver } from "./database.ts";
+import { connect, DRIVERS, type Driver } from "./database.ts";
 
 const env = (key: string, fallback?: string) => {
   const value = process.env[key] ?? fallback;
@@ -25,8 +25,8 @@ const DB_DRIVER = env("DB_DRIVER", "postgres") as Driver;
 const VAPID_PUBLIC_KEY = env("VAPID_PUBLIC_KEY");
 const VAPID_PRIVATE_KEY = env("VAPID_PRIVATE_KEY");
 
-if (DB_DRIVER !== "postgres" && DB_DRIVER !== "mongodb") {
-  throw new Error(`DB_DRIVER must be "postgres" or "mongodb", got "${DB_DRIVER}"`);
+if (!DRIVERS.includes(DB_DRIVER)) {
+  throw new Error(`DB_DRIVER must be one of ${DRIVERS.join(", ")}, got "${DB_DRIVER}"`);
 }
 
 const pushPlugin = push({

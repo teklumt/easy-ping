@@ -3,11 +3,7 @@ import { createPostgresTables, pgTransaction } from "../src/adapters/postgres";
 import { pushSchema } from "../src/plugins/push";
 import { createTestDatabase, postgresReachable, type TestDatabase } from "./helpers/pg";
 
-/**
- * The two helpers that exist so integrators stop hand-writing them. Both were
- * copied verbatim into every app before they shipped, which is the argument
- * for testing them here rather than trusting each copy.
- */
+// The two helpers every integration was hand-writing.
 
 let db: TestDatabase;
 const available = await postgresReachable();
@@ -63,9 +59,7 @@ describe("pgTransaction", () => {
   });
 
   it("releases the client on every path", async () => {
-    // The whole reason this is a shipped helper: a dropped release leaks a
-    // connection per send until the pool is exhausted, and it only shows up
-    // under load.
+    // A dropped release leaks a connection per send; it only shows under load.
     const ok = stubPool();
     await pgTransaction(ok.pool)(async () => "fine");
     expect(ok.released()).toBe(1);

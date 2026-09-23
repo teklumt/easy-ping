@@ -2,11 +2,7 @@ import type { SchemaDeclaration } from "../../core/plugin";
 import { coreSchema, renderPostgresDdl } from "../../schema";
 import type { SqlQuery } from "./adapter";
 
-/**
- * The slice of `pg`'s Pool this needs, declared structurally so the library
- * takes no dependency on the driver. `postgres.js` and Kysely have their own
- * transaction helpers and do not need this one.
- */
+/** The slice of pg's Pool this needs, structurally. */
 export type PgPoolLike = {
   connect(): Promise<{
     query(text: string, params?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
@@ -14,15 +10,7 @@ export type PgPoolLike = {
   }>;
 };
 
-/**
- * The `transaction` option for `node-postgres`, so callers stop hand-writing
- * the same sixteen lines of BEGIN/COMMIT/ROLLBACK/release.
- *
- *     postgresAdapter(query, { transaction: pgTransaction(pool) })
- *
- * The `finally` is the part worth having in one place: drop the release and
- * every send leaks a connection until the pool is exhausted.
- */
+/** The `transaction` option for node-postgres. */
 export function pgTransaction(pool: PgPoolLike) {
   return async <T>(fn: (query: SqlQuery) => Promise<T>): Promise<T> => {
     const client = await pool.connect();
@@ -43,21 +31,11 @@ export function pgTransaction(pool: PgPoolLike) {
 export type CreateTablesOptions = {
   /** Must match the prefix given to the adapter. */
   prefix?: string;
-  /**
-   * Schemas owned by plugins, exported alongside each plugin — `pushSchema`
-   * from `easy-ping/plugins/push`, for instance.
-   */
+  /** Plugin schemas, e.g. `pushSchema`. */
   plugins?: readonly SchemaDeclaration[];
 };
 
-/**
- * Creates the core tables, plus any plugin tables passed, and returns how many
- * statements ran.
- *
- * Every statement is `IF NOT EXISTS`, so this is safe to run on every boot.
- * It is a bootstrap, not a migration: it never alters a table that already
- * exists. Once a database is live, use `planPostgresMigration` instead.
- */
+/** Creates core and plugin tables, IF NOT EXISTS. Bootstrap, not migration. */
 export async function createPostgresTables(
   query: SqlQuery,
   options: CreateTablesOptions = {},

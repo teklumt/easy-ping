@@ -34,8 +34,7 @@ export function createSchema(prefix = "") {
       index(name("notification_feed_idx")).on(table.userId, table.createdAt.desc()),
       index(name("notification_unseen_idx")).on(table.userId).where(sql`${table.seenAt} is null`),
       index(name("notification_group_idx")).on(table.userId, table.groupKey),
-      // Postgres treats NULLs as distinct here, so unlimited rows may carry no
-      // dedupe key while a present one is enforced unique per user.
+      // NULLs are distinct here: unlimited rows without a dedupe key.
       uniqueIndex(name("notification_dedupe_idx")).on(table.userId, table.dedupeKey),
     ],
   );

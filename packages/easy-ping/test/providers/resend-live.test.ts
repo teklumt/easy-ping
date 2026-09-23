@@ -1,22 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ResendError, resend } from "../../src/providers/resend";
 
-/**
- * The Resend provider against Resend's real API.
- *
- * Two tiers, because they need different things:
- *
- *  - The rejection tests need no credentials. A bogus key still proves the URL,
- *    headers and body reach Resend and come back as a structured error rather
- *    than a 400 "malformed request" — which is what a wrong request shape looks
- *    like, and what a stub can never tell you.
- *
- *  - The delivery test needs a real key and a verified sender, so it is opt-in:
- *
- *      RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>" \
- *      RESEND_TO=you@example.com \
- *      pnpm --filter easy-ping test resend-live
- */
+// Resend's real API: rejection paths need no credentials; delivery needs RESEND_API_KEY and RESEND_FROM.
 
 const message = (over: Record<string, unknown> = {}) => ({
   to: "delivered@resend.dev",
@@ -29,7 +14,7 @@ const message = (over: Record<string, unknown> = {}) => ({
 const online = process.env.EASY_PING_OFFLINE !== "1";
 
 describe.skipIf(!online)("resend provider against the real API", () => {
-  it("a bad key is rejected as 401, and classified as never-retryable", async () => {
+  it("a bad key is rejected as 401, and classified as never-retryable", async (ctx) => {
     const provider = resend({ apiKey: "re_invalid_key_for_testing", from: "Acme <hi@acme.dev>" });
 
     const error = await provider.send(message()).then(
@@ -37,9 +22,18 @@ describe.skipIf(!online)("resend provider against the real API", () => {
       (caught: unknown) => caught,
     );
 
+    expect(error).toBeInstanceOf(ResendError);
+
+    // No status means the request never landed, which says nothing about the
+    // request shape this case exists to check. Skip rather than fail a release
+    // on someone else's network.
+    if ((error as ResendError).status === undefined) {
+      ctx.skip();
+      return;
+    }
+
     // A structured 401 means the request was well-formed enough to authenticate
     // against. A 400 here would mean our body shape is wrong.
-    expect(error).toBeInstanceOf(ResendError);
     expect((error as ResendError).status).toBe(401);
 
     // Burning five attempts on a revoked key helps nobody.

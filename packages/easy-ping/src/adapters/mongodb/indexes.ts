@@ -23,15 +23,7 @@ const BSON_TYPE: Record<FieldDeclaration["type"], string> = {
   json: "object",
 };
 
-/**
- * Applies a SchemaDeclaration's indexes to Mongo. The document counterpart of
- * renderPostgresDdl — there are no tables to create, only indexes, and the
- * declaration is the same source of truth.
- *
- * A unique index over a nullable field gets a partial filter. Postgres treats
- * every NULL as distinct, so unlimited rows may leave dedupeKey unset; a plain
- * Mongo unique index treats them as one value and would allow exactly one.
- */
+/** Applies a SchemaDeclaration's indexes. A unique index over a nullable field gets a partial filter, since Mongo treats all NULLs as one value. */
 export async function createPluginIndexes(
   db: unknown,
   schema: SchemaDeclaration,

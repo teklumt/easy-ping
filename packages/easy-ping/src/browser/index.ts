@@ -1,9 +1,4 @@
-/**
- * The browser half of web push.
- *
- * Everything here is injectable so it can be tested in Node: the real
- * navigator, Notification and fetch are only reached through the defaults.
- */
+// Everything here is injectable so it can be tested in Node.
 
 export type PushSubscriptionPayload = {
   endpoint: string;
@@ -44,10 +39,7 @@ export function isPushSupported(): boolean {
   );
 }
 
-/**
- * applicationServerKey must be raw bytes; handing the browser the base64url
- * string it came in as fails with an opaque InvalidCharacterError.
- */
+/** applicationServerKey must be raw bytes, not the base64url string. */
 export function decodeVapidKey(publicKey: string): Uint8Array<ArrayBuffer> {
   const padded = publicKey.padEnd(publicKey.length + ((4 - (publicKey.length % 4)) % 4), "=");
 
@@ -55,8 +47,6 @@ export function decodeVapidKey(publicKey: string): Uint8Array<ArrayBuffer> {
   try {
     binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
   } catch {
-    // atob throws a bare "Invalid character", which says nothing about which
-    // of the several keys in a push setup is wrong.
     throw new Error("VAPID publicKey is not valid base64url");
   }
 
@@ -84,10 +74,7 @@ async function resolveRegistration(options: SubscribeOptions): Promise<ServiceWo
   return registration;
 }
 
-/**
- * Registers the worker, asks permission, subscribes, and hands the
- * subscription to the server. Returns what was registered.
- */
+/** Registers the worker, asks permission, subscribes, and registers the subscription with the server. */
 export async function subscribeToPush(options: SubscribeOptions): Promise<PushSubscriptionPayload> {
   const registration = await resolveRegistration(options);
 

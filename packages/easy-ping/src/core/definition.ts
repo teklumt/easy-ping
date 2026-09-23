@@ -27,10 +27,7 @@ export function defineNotification<TSchema extends StandardSchemaV1 | undefined 
   return definition;
 }
 
-/**
- * Erased form. `EmailTemplate<never>` because callbacks are contravariant —
- * anything else makes every schema-typed definition fail to assign.
- */
+/** Erased form. `EmailTemplate<never>` because callbacks are contravariant. */
 export type AnyNotificationDefinition = {
   schema?: StandardSchemaV1 | undefined;
   channels: readonly Channel[];

@@ -55,12 +55,7 @@ export type ClaimedDelivery = {
 export type DeliveryOutcome =
   | { result: "sent" }
   | { result: "failed"; error: string; retryable: boolean }
-  /**
-   * Nothing to do, and nothing wrong. A channel whose preconditions are
-   * simply absent — push with no registered device, say — must not land in
-   * `getFailedDeliveries`, or the one view meant to surface real breakage
-   * fills up with people who never opted in. Terminal: never retried.
-   */
+  /** Nothing to do and nothing wrong (push with no device, say). Terminal; kept out of getFailedDeliveries. */
   | { result: "skipped"; reason: string };
 
 export type DeliveryRelease = {
@@ -86,17 +81,10 @@ export type FeedPage = {
 export type DatabaseAdapter = {
   readonly name: string;
 
-  /**
-   * How the adapter names stored fields. SQL adapters use snake_case columns;
-   * document stores keep the declared camelCase. The plugin store translates
-   * accordingly rather than assuming one of them.
-   */
+  /** snake_case columns (SQL) or the declared camelCase (document stores); the store translates. */
   readonly naming?: "snake_case" | "preserve";
 
-  /**
-   * True when json values must reach the driver as strings. postgres-js cannot
-   * bind a plain object; Mongo stores one natively.
-   */
+  /** True when json must reach the driver as a string. */
   readonly serializesJson?: boolean;
 
   /** One transaction. A duplicate (userId, dedupeKey) is reported, not thrown. */
@@ -119,11 +107,7 @@ export type DatabaseAdapter = {
 
   getFailedDeliveries(args: { since: Date; limit: number }): Promise<readonly DeliveryRecord[]>;
 
-  /**
-   * Generic table access for plugin-declared tables. Reached only through a
-   * PluginStore, which validates the table and every column against the
-   * plugin's own schema() before anything gets here.
-   */
+  /** Plugin-table access. Reached only through a PluginStore, which validated table and columns. */
   queryTable(
     table: string,
     where: WhereClause,

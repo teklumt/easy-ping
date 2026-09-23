@@ -6,7 +6,7 @@ browser half of web push lives — the part the library cannot own for you.
 ## Run it
 
 ```bash
-docker compose up -d                      # Postgres + MongoDB, from the repo root
+docker compose up -d                      # Postgres, MongoDB and MySQL, from the repo root
 pnpm --filter easy-ping build           # the demo serves the built bundles
 
 cd demo-app
@@ -15,7 +15,8 @@ pnpm keys                                 # generate VAPID keys -> paste into .e
 pnpm dev                                  # http://localhost:3210
 ```
 
-Set `DB_DRIVER=mongodb` in `.env` to run the exact same demo on MongoDB. The
+Set `DB_DRIVER` to `mongodb`, `mysql` or `sqlite` in `.env` to run the exact same demo on another
+database (SQLite needs nothing running: it uses Node's own `node:sqlite` in memory). The
 startup banner names whichever one it connected to.
 
 Then: **Enable push** → allow the permission prompt → type a message → **Send**.
@@ -36,7 +37,7 @@ second person and confirm feeds stay separate.
 | web push | VAPID, aes128gcm, a real service worker, a real push service |
 | device registry | register, re-register, unregister, prune |
 | session scoping | `x-demo-user` stands in for your auth |
-| both adapters | the same code on Postgres and MongoDB |
+| all four adapters | the same code on Postgres, MongoDB, MySQL and SQLite |
 
 `delivery.mode` is `inline` so there is no cron to run.
 
@@ -61,7 +62,7 @@ Three pieces, none of which the library can supply for you:
 
 ## Troubleshooting
 
-**"Cannot reach Postgres" / "Cannot reach MongoDB"** — the container is not up.
+**"Cannot reach Postgres" / "Cannot reach MongoDB" / "Cannot reach MySQL"** — the container is not up.
 `docker compose up -d` from the repo root. If the Docker engine itself will not
 start, open Docker Desktop and clear whatever it is waiting on (sign-in,
 licence, update).

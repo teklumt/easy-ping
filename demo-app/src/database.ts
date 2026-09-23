@@ -2,16 +2,28 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import type { DatabaseAdapter, SchemaDeclaration } from "easy-ping";
 import { drizzleAdapter } from "easy-ping/adapters/drizzle";
 import { createMongoIndexes, createPluginIndexes, mongoAdapter } from "easy-ping/adapters/mongodb";
+import {
+  createMysqlTables,
+  mysql2Query,
+  mysqlAdapter,
+  mysqlTransaction,
+} from "easy-ping/adapters/mysql";
+import {
+  createSqliteTables,
+  sqliteAdapter,
+  sqliteQuery,
+  sqliteTransaction,
+} from "easy-ping/adapters/sqlite";
 import { coreSchema, renderPostgresDdl } from "easy-ping/schema";
 import { MongoClient } from "mongodb";
+import mysql from "mysql2/promise";
 import postgres from "postgres";
 
-export type Driver = "postgres" | "mongodb";
+export type Driver = "postgres" | "mongodb" | "mysql" | "sqlite";
 
-/**
- * The same demo against either database. Everything above this file is
- * identical for both — that is the point of the exercise.
- */
+export const DRIVERS: readonly Driver[] = ["postgres", "mongodb", "mysql", "sqlite"];
+
+/** The same demo against any of the four databases; everything above this file is identical. */
 export async function connect(
   driver: Driver,
   pluginSchemas: readonly SchemaDeclaration[],
@@ -30,9 +42,39 @@ export async function connect(
     await createMongoIndexes(db);
     for (const schema of pluginSchemas) await createPluginIndexes(db, schema);
 
-    // The client, not just the db: it is what makes createNotifications
-    // transactional, which needs the replica set docker compose sets up.
     return { adapter: mongoAdapter(db, { client }), label: `mongodb ${redact(url)}` };
+  }
+
+  if (driver === "mysql") {
+    const url = process.env.MYSQL_URL ?? "mysql://root:easyping@localhost:33069/easyping_demo";
+    const pool = mysql.createPool({ uri: url, timezone: "Z", connectTimeout: 5000 });
+    const query = mysql2Query(pool);
+
+    try {
+      await createMysqlTables(query, { plugins: pluginSchemas });
+    } catch (error) {
+      fail(`MySQL at ${redact(url)}`, error);
+    }
+
+    return {
+      adapter: mysqlAdapter(query, { transaction: mysqlTransaction(pool) }),
+      label: `mysql ${redact(url)}`,
+    };
+  }
+
+  if (driver === "sqlite") {
+    const path = process.env.SQLITE_PATH ?? ":memory:";
+    const { DatabaseSync } = process.getBuiltinModule(
+      "node:sqlite",
+    ) as typeof import("node:sqlite");
+    const db = new DatabaseSync(path);
+    const query = sqliteQuery(db);
+    await createSqliteTables(query, { plugins: pluginSchemas });
+
+    return {
+      adapter: sqliteAdapter(query, { transaction: sqliteTransaction(db) }),
+      label: `sqlite ${path}`,
+    };
   }
 
   const url =

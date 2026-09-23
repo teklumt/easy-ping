@@ -47,11 +47,7 @@ async function hkdf(
   );
 }
 
-/**
- * The receiving half of RFC 8291, written from the spec rather than by reusing
- * the sender's helpers. Round-tripping through the same code would pass even
- * with a symmetric bug — a wrong info string used on both sides, say.
- */
+/** RFC 8291 receiving half, written from the spec so a shared misreading cannot agree with itself. */
 export async function decryptAsBrowser(
   body: Uint8Array<ArrayBuffer>,
   subscriber: Subscriber,

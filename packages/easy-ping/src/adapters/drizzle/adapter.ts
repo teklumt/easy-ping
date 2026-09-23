@@ -15,11 +15,7 @@ import { toSnakeCase } from "../../schema/declaration";
 
 type Row = Record<string, unknown>;
 
-/**
- * Minimal structural view of a Drizzle client. Deliberately not the real
- * inferred type — introspecting Drizzle's generics at a boundary costs
- * thousands of type instantiations for nothing. See plan §16.
- */
+/** Structural, not Drizzle's inferred type: that costs thousands of instantiations at a boundary. */
 type ExecutableDb = {
   execute: (query: SQL) => Promise<unknown>;
   transaction: <T>(fn: (tx: ExecutableDb) => Promise<T>) => Promise<T>;
@@ -46,10 +42,7 @@ const date = (value: unknown): Date => (value instanceof Date ? value : new Date
 const nullableDate = (value: unknown): Date | null =>
   value == null ? null : value instanceof Date ? value : new Date(String(value));
 
-/**
- * postgres-js rejects a Date bound to an explicitly-typed ::timestamptz param.
- * ISO strings bind cleanly on every driver, and the cast does the conversion.
- */
+/** postgres-js rejects a Date bound to a ::timestamptz param; ISO strings bind everywhere. */
 const ts = (value: Date) => value.toISOString();
 
 const encodeCursor = (createdAt: Date, id: string) =>
@@ -98,14 +91,8 @@ function toDelivery(row: Row): DeliveryRecord {
   };
 }
 
-/** Dates bind as ISO strings; see the note on `ts` above. */
 const bind = (value: unknown): unknown => (value instanceof Date ? value.toISOString() : value);
 
-/**
- * Identifiers here are already validated by the PluginStore against the
- * plugin's own schema, and still go through sql.identifier rather than
- * interpolation. Values are always bound.
- */
 function whereSql(where: WhereClause): SQL {
   const entries = Object.entries(where);
   if (entries.length === 0) return sql``;
@@ -160,13 +147,7 @@ export function drizzleAdapter(
     async createNotifications(input: readonly InsertNotification[]) {
       if (input.length === 0) return { created: [], deduped: [] };
 
-      // One clock. created_at/updated_at have a DEFAULT now() for hand-written
-      // SQL, but now() is the *database* clock while every cutoff the library
-      // compares it against (markSeen, getFailedDeliveries) comes from the app.
-      // App and database are different hosts in production, and NTP skew of a
-      // few hundred ms is routine, so the newest rows fell outside markSeen and
-      // the unseen badge never cleared. The mongo adapter always wrote these in
-      // the app; this makes both agree.
+      // App clock, not now(): markSeen compares against app-side cutoffs and NTP skew broke it.
       const now = new Date();
 
       return db.transaction(async (tx) => {
@@ -183,8 +164,7 @@ export function drizzleAdapter(
           )`,
         );
 
-        // Rows with a NULL dedupe_key never conflict — Postgres treats NULLs
-        // as distinct — so unlimited undeduped notifications coexist.
+        // NULL dedupe keys never conflict, so undeduped rows coexist.
         const inserted = await run(
           sql`
             INSERT INTO ${NOTIFICATION} (id, user_id, type, payload, actor_id, group_key, dedupe_key, created_at)
@@ -246,10 +226,7 @@ export function drizzleAdapter(
             )})`
           : sql``;
 
-      // SKIP LOCKED is what lets concurrent sweeps step around each other
-      // rather than block. The CTE joins the notification in the same round
-      // trip — claiming 20 rows then looking each one up is the N+1 this
-      // primitive exists to avoid. See RFC 0003 §5.
+      // SKIP LOCKED lets concurrent sweeps step around each other. RFC 0003 §5.
       const rows = await run(sql`
         WITH claimed AS (
           UPDATE ${DELIVERY}
@@ -310,9 +287,7 @@ export function drizzleAdapter(
         )`;
       });
 
-      // Written unconditionally — no claimed_by predicate. If the lease expired
-      // and another worker re-sent, the duplicate already happened; recording
-      // the true terminal state beats wedging the row in 'claimed'. RFC 0003 §6.
+      // No claimed_by predicate on purpose: terminal state beats a wedged row. RFC 0003 §6.
       await db.execute(sql`
         UPDATE ${DELIVERY} d
         SET status = CASE
@@ -380,12 +355,7 @@ export function drizzleAdapter(
     async markRead(userId: string, notificationIds: readonly string[]) {
       if (notificationIds.length === 0) return 0;
 
-      // Scoped by user_id as well as id — a caller must never be able to flip
-      // someone else's row by guessing an id. RFC 0002 §2.
-      // No `read_at IS NULL` filter: re-marking must be idempotent. Returning
-      // 0 for an already-read row made the route 404, which made the client
-      // roll its optimistic update back and show the item as unread again.
-      // COALESCE preserves the original timestamp.
+      // Scoped by user_id (RFC 0002 §2); no read_at IS NULL filter so re-marking stays idempotent.
       const rows = await run(sql`
         UPDATE ${NOTIFICATION}
         SET read_at = COALESCE(read_at, ${ts(new Date())}::timestamptz)
@@ -428,8 +398,6 @@ export function drizzleAdapter(
     ) {
       if (rows.length === 0) return 0;
 
-      // Column order is taken from the first row and every row is projected
-      // onto it, so a ragged batch cannot shift values into other columns.
       const columns = Object.keys(rows[0] ?? {});
       if (columns.length === 0) return 0;
 

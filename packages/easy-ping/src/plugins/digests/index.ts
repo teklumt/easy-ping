@@ -22,10 +22,7 @@ export type DigestEntry = {
 };
 
 export type DigestsOptions = {
-  /**
-   * The notification type the composed digest is sent as. The app defines it
-   * with an email template taking `{ items }`.
-   */
+  /** The type the composed digest is sent as; the app defines its template over `{ items }`. */
   digestType?: string;
   /** Local hour at which a digest becomes due. */
   sendHour?: number;
@@ -45,16 +42,7 @@ type Prepared = {
 const isDigestWindow = (frequency: Frequency): frequency is DigestWindow =>
   frequency === "daily" || frequency === "weekly";
 
-/**
- * Collects notifications a user has chosen to receive on a schedule, then
- * sends them as one message.
- *
- * Deliberately not implemented with `defer`: deferring N emails to 9am sends N
- * emails at 9am. A digest is one email containing N items, so the channel is
- * skipped and the item is bucketed instead.
- *
- * Depends on `preferences` for the per-type frequency it reads.
- */
+/** One email containing N items, rather than N deferred emails at 9am. Depends on `preferences` for the frequency. */
 export function digests(options: DigestsOptions = {}): EasyPingPlugin<"digests"> {
   const digestType = options.digestType ?? "digest";
   const sendHour = options.sendHour ?? 9;
@@ -178,10 +166,7 @@ export function digests(options: DigestsOptions = {}): EasyPingPlugin<"digests">
 
     routes: [
       {
-        /**
-         * Point an hourly cron here. Hourly rather than daily because "9am"
-         * is 24 different UTC moments, and which ones shift with DST.
-         */
+        /** Point an hourly cron here: "9am" is 24 different UTC moments that shift with DST. */
         path: "/digests/cron",
         method: "POST",
         scope: { type: "machine" },
@@ -221,8 +206,7 @@ export function digests(options: DigestsOptions = {}): EasyPingPlugin<"digests">
               if (forWindow.length === 0) continue;
 
               const period = periodKey(window, moment, sendWeekday);
-              // The schedule is idempotent on this comparison, not on timing:
-              // a cron that runs twice in an hour cannot send twice.
+              // Idempotent on the period key, so a cron that runs twice cannot send twice.
               if (lastPeriods.get(`${userId} ${window}`) === period) continue;
               if (!isDue(window, moment, sendHour, sendWeekday)) continue;
 
@@ -246,8 +230,7 @@ export function digests(options: DigestsOptions = {}): EasyPingPlugin<"digests">
                 { onConflict: ["userId", "window"] },
               );
 
-              // Only after the send is recorded, so a crash re-sends rather
-              // than dropping the batch.
+              // Only after the send is recorded: a crash re-sends rather than drops.
               await ctx.store.remove(ENTRY, {
                 id: { in: forWindow.map((entry) => entry.id) },
               });

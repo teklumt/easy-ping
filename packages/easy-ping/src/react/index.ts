@@ -16,18 +16,13 @@ export type UseNotificationsResult = NotifyState & {
   refresh: () => Promise<void>;
 };
 
-/**
- * All state and optimistic-rollback logic lives in the framework-agnostic
- * client; this binding only wires it to React's lifecycle.
- */
+/** State lives in the framework-agnostic client; this only wires React's lifecycle. */
 export function useNotifications(
   options: NotifyClientOptions & { client?: NotifyClient } = {},
 ): UseNotificationsResult {
   const { client: provided, baseUrl, limit, pollIntervalMs, maxPollIntervalMs } = options;
 
-  // Callbacks are usually inline literals. Held in a ref and called through a
-  // stable wrapper so a new function identity each render does not rebuild the
-  // client and restart polling.
+  // Held in a ref so a new callback identity per render does not rebuild the client.
   const callbacksRef = useRef(options);
   callbacksRef.current = options;
 

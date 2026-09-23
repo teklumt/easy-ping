@@ -134,6 +134,51 @@ Everything after this point is identical.
 </details>
 
 <details>
+<summary>On MySQL instead</summary>
+
+```bash
+pnpm add easy-ping mysql2 zod
+```
+
+```ts
+import { createMysqlTables, mysql2Query, mysqlAdapter, mysqlTransaction } from "easy-ping/adapters/mysql";
+import mysql from "mysql2/promise";
+
+// timezone "Z": the adapter writes DATETIME columns as UTC and must read them back unshifted.
+const pool = mysql.createPool({ uri: process.env.DATABASE_URL, timezone: "Z" });
+const query = mysql2Query(pool);
+
+await createMysqlTables(query);   // CREATE TABLE IF NOT EXISTS, safe on every boot
+
+// With a transaction, a claim uses FOR UPDATE SKIP LOCKED (MySQL 8+). Without
+// one it is a single lock-free UPDATE that still never double-claims a row.
+export const database = mysqlAdapter(query, { transaction: mysqlTransaction(pool) });
+```
+
+MySQL 8 or MariaDB. Any driver works: the contract is `(text, params) => Promise<{ rows, affectedRows }>`.
+
+</details>
+
+<details>
+<summary>On SQLite instead</summary>
+
+```ts
+import { createSqliteTables, sqliteAdapter, sqliteQuery, sqliteTransaction } from "easy-ping/adapters/sqlite";
+import { DatabaseSync } from "node:sqlite";   // Node 22.13+; better-sqlite3 works the same way
+
+const db = new DatabaseSync("./app.db");
+const query = sqliteQuery(db);
+
+await createSqliteTables(query);
+
+export const database = sqliteAdapter(query, { transaction: sqliteTransaction(db) });
+```
+
+SQLite has one writer at a time, so the claim is a plain `UPDATE … WHERE id IN (SELECT … LIMIT ?)`; two sweeps cannot interleave. Dates are ISO text, booleans 0/1, JSON text.
+
+</details>
+
+<details>
 <summary>Adding a plugin's tables</summary>
 
 Plugins own their own tables and export the declaration, so no plugin instance is needed:
@@ -380,6 +425,8 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ Postgres through any driver — no ORM needed | `pg`, `postgres.js`, Kysely, Neon… |
 | ✅ Postgres via Drizzle, for those already on it | same conformance suite |
 | ✅ MongoDB | same conformance suite |
+| ✅ MySQL 8 / MariaDB | `SKIP LOCKED` with a transaction, lock-free `UPDATE` without |
+| ✅ SQLite | `node:sqlite` or better-sqlite3; one writer, so the claim is one `UPDATE` |
 | ✅ Delivery runner, all four modes, retry + backoff | |
 | ✅ Resend provider | |
 | ✅ Route handler, session scoping, cron | |
@@ -389,7 +436,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
 | ✅ push verified against a live push service | Mozilla autopush, plus a cross-check against `http_ece` |
 | ✅ scoped plugin storage, so plugins own their tables | |
-| ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()` |
+| ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()`; MySQL and SQLite are bootstrap-only for now |
 | ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |
 | ⬜ realtime, batching | |
 | ⬜ Prisma adapter, Vue / Svelte bindings | Kysely already works through `postgresAdapter` |
@@ -408,7 +455,7 @@ for (const testCase of adapterConformanceCases) {
 }
 ```
 
-Thirteen cases. The one that matters asserts a row locked by another transaction is *skipped*, not waited on; it is tagged `requires: "rowLock"`, and a store whose claim is a single atomic update filters it out rather than faking it.
+Fifteen cases, run against six backends in this repo (two Postgres paths, MongoDB, two MySQL paths, SQLite). The one that matters asserts a row locked by another transaction is *skipped*, not waited on; it is tagged `requires: "rowLock"`, and a store whose claim is a single atomic update filters it out rather than faking it.
 
 Declare your dialect on the adapter so the plugin store writes what your driver expects:
 
@@ -423,11 +470,11 @@ serializesJson: boolean             // json as a string, or natively
 
 ```bash
 pnpm install
-docker compose up -d     # Postgres on :54329, MongoDB on :27019
+docker compose up -d     # Postgres on :54329, MongoDB on :27019, MySQL on :33069
 pnpm test
 ```
 
-Mongo runs as a single-node replica set, because that is the only way it offers transactions.
+Mongo runs as a single-node replica set, because that is the only way it offers transactions. SQLite needs nothing running: the suite uses Node's own `node:sqlite` in memory.
 
 Database tests skip locally when a database is unreachable, and **fail** in CI — a green build that ran none of them is worse than a red one.
 

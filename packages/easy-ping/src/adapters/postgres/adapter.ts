@@ -11,29 +11,17 @@ import { decodeBase64Url, encodeBase64Url } from "../../core/base64url";
 import { isOperator, type QueryOptions, type WhereClause } from "../../core/store";
 import type { Channel, DeliveryRecord, DeliveryStatus, NotificationRecord } from "../../core/types";
 import { toSnakeCase } from "../../schema/declaration";
-import { quote, Statement } from "./statement";
+import { quote, Statement } from "../sql/statement";
 
 type Row = Record<string, unknown>;
 
-/**
- * Run one parameterised statement and return its rows.
- *
- * This is the whole contract — the lowest common denominator every Postgres
- * driver already exposes, which is what makes this adapter work with `pg`,
- * `postgres.js`, Kysely, Neon, or anything else without an ORM in between.
- */
+/** Run one parameterised statement, return rows: the whole driver contract. */
 export type SqlQuery = (text: string, params: readonly unknown[]) => Promise<readonly Row[]>;
 
 export type PostgresAdapterOptions = {
   /** Table-name prefix. Must match the instance's `tablePrefix`. */
   prefix?: string;
-  /**
-   * Runs `fn` inside a transaction, passing it a query function bound to that
-   * transaction. Supply it and `createNotifications` becomes atomic — a
-   * notification and its deliveries land together or neither does. Without it
-   * the adapter still works; it just loses that guarantee, the same tradeoff
-   * the Mongo adapter makes when no client is passed.
-   */
+  /** Makes createNotifications atomic. Optional; without it each write is still safe. */
   transaction?: <T>(fn: (query: SqlQuery) => Promise<T>) => Promise<T>;
 };
 
@@ -115,8 +103,7 @@ function appendWhere(statement: Statement, where: WhereClause): void {
 
     if ("in" in operator) {
       const list = operator.in as readonly (string | number)[];
-      // An empty IN () is a syntax error, and matching nothing is the honest
-      // reading of "in this empty set".
+      // An empty IN () is a syntax error.
       if (list.length === 0) statement.raw("FALSE");
       else statement.raw(`${column} IN (`).list(list).raw(")");
       return;
@@ -133,18 +120,7 @@ function appendWhere(statement: Statement, where: WhereClause): void {
   });
 }
 
-/**
- * Postgres, through any driver — no ORM required.
- *
- * `drizzleAdapter` predates this and is kept for people already on Drizzle,
- * but it only ever used Drizzle as a SQL builder. This takes the query
- * function directly instead, so a plain `pg` Pool, `postgres.js`, Kysely or a
- * serverless driver all work without pulling an ORM into the dependency tree.
- *
- * The SQL is deliberately Postgres-specific — `ON CONFLICT`, `FOR UPDATE SKIP
- * LOCKED` and `IS DISTINCT FROM` have no portable equivalent, and the claim
- * primitive depends on the second of those. See RFC 0003.
- */
+/** Postgres through any driver, no ORM. Deliberately Postgres-specific: ON CONFLICT, FOR UPDATE SKIP LOCKED, IS DISTINCT FROM. RFC 0003. */
 export function postgresAdapter(
   query: SqlQuery,
   options: PostgresAdapterOptions = {},
@@ -157,7 +133,6 @@ export function postgresAdapter(
   const run = async (statement: Statement, exec: SqlQuery = query) =>
     exec(statement.text, statement.params);
 
-  /** Uses a transaction when one was supplied, and runs plainly otherwise. */
   const atomically = <T>(fn: (exec: SqlQuery) => Promise<T>): Promise<T> =>
     options.transaction ? options.transaction(fn) : fn(query);
 
@@ -169,10 +144,7 @@ export function postgresAdapter(
     async createNotifications(input: readonly InsertNotification[]) {
       if (input.length === 0) return { created: [], deduped: [] };
 
-      // One clock. created_at has a DEFAULT now() for hand-written SQL, but
-      // now() is the *database* clock while every cutoff compared against it
-      // (markSeen, getFailedDeliveries) comes from the app. In production those
-      // are different hosts, and NTP skew put the newest rows outside markSeen.
+      // App clock, not now(): markSeen compares against app-side cutoffs and NTP skew broke it.
       const now = new Date();
 
       return atomically(async (exec) => {
@@ -195,8 +167,7 @@ export function postgresAdapter(
           ]);
         });
 
-        // Rows with a NULL dedupe_key never conflict — Postgres treats NULLs as
-        // distinct — so unlimited undeduped notifications coexist.
+        // NULL dedupe keys never conflict, so undeduped rows coexist.
         insert.raw(" ON CONFLICT (user_id, dedupe_key) DO NOTHING RETURNING id");
 
         const inserted = await run(insert, exec);
@@ -238,10 +209,7 @@ export function postgresAdapter(
       const now = args.now ?? new Date();
       const staleBefore = new Date(now.getTime() - args.leaseMs);
 
-      // SKIP LOCKED is what lets concurrent sweeps step around each other
-      // rather than block. The CTE joins the notification in the same round
-      // trip — claiming 20 rows then looking each one up is the N+1 this
-      // primitive exists to avoid. See RFC 0003 §5.
+      // SKIP LOCKED lets concurrent sweeps step around each other. RFC 0003 §5.
       const statement = new Statement()
         .raw(`WITH claimed AS (UPDATE ${DELIVERY} SET status = 'claimed', claimed_at = `)
         .value(now)
@@ -293,9 +261,7 @@ export function postgresAdapter(
       if (releases.length === 0) return;
       const now = new Date();
 
-      // Written unconditionally — no claimed_by predicate. If the lease expired
-      // and another worker re-sent, the duplicate already happened; recording
-      // the true terminal state beats wedging the row in 'claimed'. RFC 0003 §6.
+      // No claimed_by predicate on purpose: terminal state beats a wedged row. RFC 0003 §6.
       const statement = new Statement().raw(
         `UPDATE ${DELIVERY} d SET status = CASE` +
           " WHEN v.result = 'sent' THEN 'sent'" +
@@ -391,11 +357,7 @@ export function postgresAdapter(
     async markRead(userId: string, notificationIds: readonly string[]) {
       if (notificationIds.length === 0) return 0;
 
-      // Scoped by user_id as well as id — a caller must never be able to flip
-      // someone else's row by guessing an id. RFC 0002 §2.
-      // No `read_at IS NULL` filter: re-marking must be idempotent. Returning 0
-      // for an already-read row made the route 404, which made the client roll
-      // its optimistic update back and show the item as unread again.
+      // Scoped by user_id (RFC 0002 §2); no read_at IS NULL filter so re-marking stays idempotent.
       const rows = await run(
         new Statement()
           .raw(`UPDATE ${NOTIFICATION} SET read_at = COALESCE(read_at, `)
@@ -452,8 +414,6 @@ export function postgresAdapter(
     ) {
       if (rows.length === 0) return 0;
 
-      // Column order is taken from the first row and every row is projected
-      // onto it, so a ragged batch cannot shift values into other columns.
       const columns = Object.keys(rows[0] ?? {});
       if (columns.length === 0) return 0;
 

@@ -20,10 +20,7 @@ export type DeliveryConfig = {
   /** inline mode only. */
   throwOnError?: boolean;
   backoff?: "exponential" | ((attempt: number) => number);
-  /**
-   * Next.js `after`, Cloudflare `ctx.waitUntil`, or @vercel/functions.
-   * Injected, not detected: importing a maybe-absent package breaks bundlers.
-   */
+  /** Next.js `after` or Cloudflare `ctx.waitUntil`. Injected, not detected. */
   waitUntil?: (promise: Promise<unknown>) => void;
 };
 
@@ -47,25 +44,14 @@ export type EasyPingConfig<TDefs extends NotificationDefinitions> = {
     /** Sweeps one POST /cron may run before returning. Defaults to 50. */
     maxSweeps?: number;
   };
-  /**
-   * Bearer secret for plugins' machine routes (`/push/prune`, `/digests/cron`).
-   * Falls back to `cron.secret`; set it when the scheduler that hits /cron
-   * should not also be able to prune devices or fire digests.
-   */
+  /** Bearer secret for plugin machine routes. Falls back to `cron.secret`. */
   machineSecret?: string;
-  /**
-   * In-process fixed-window limiter, applied before routing. Keyed by client
-   * address from the usual proxy headers unless `key` says otherwise.
-   */
+  /** In-process fixed-window limiter, applied before routing. */
   rateLimit?: RateLimitConfig;
   plugins?: readonly AnyPlugin[];
   /** Where the handler is mounted, used to strip the prefix off incoming URLs. */
   basePath?: string;
-  /**
-   * Origins allowed to POST besides the request's own host. Cross-origin
-   * POSTs are otherwise refused with 403, and every POST must be
-   * `application/json`. `"*.example.com"` matches subdomains.
-   */
+  /** Origins other than the request host that may POST. `"*.example.com"` matches subdomains. */
   trustedOrigins?: readonly string[];
   /** Runs before routing. Return a Response to short-circuit — a rate limiter's 429, say. */
   // biome-ignore lint/suspicious/noConfusingVoidType: a hook that returns nothing is the common case
@@ -133,13 +119,7 @@ export type EasyPing<TDefs extends NotificationDefinitions> = {
   /** Every mounted route with its auth scope, so `custom`-scoped ones stay visible. RFC 0002 §3. */
   listRoutes(): readonly MountedRoute[];
 
-  /**
-   * Deliveries that exhausted their attempts, newest first.
-   *
-   * The retry machinery is otherwise a black box: rows go quiet and the only
-   * way to ask what happened is SQL against tables the library owns. Wire this
-   * to an admin page or an alert.
-   */
+  /** Deliveries that exhausted their attempts, newest first. Wire it to an admin page or an alert. */
   getFailedDeliveries(options?: {
     /** Defaults to the last 24 hours. */
     since?: Date;

@@ -222,9 +222,7 @@ describe.skipIf(!available)("preferences plugin", () => {
       plugins: [preferences()],
     });
 
-    // The whole point of the fail-closed policy: an unreachable preference
-    // store must not fall back to "send to everyone", which would email
-    // people who opted out. RFC 0004 §5.
+    // Fail closed: an unreachable preference store must not send to everyone.
     const result = await notify.send("commentReply", { to: "u1", payload: {} });
     expect(result.notifications).toHaveLength(0);
     expect(result.skipped).toEqual([{ userId: "u1", reason: "no-channels" }]);

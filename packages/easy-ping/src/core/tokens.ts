@@ -18,11 +18,7 @@ const encoder = new TextEncoder();
 // Changing this invalidates every outstanding token. Bump it on purpose only.
 const KEY_SALT = encoder.encode("easy-ping/tokens/v1");
 
-/**
- * One HMAC key per purpose, derived from the master secret with HKDF. A key
- * that can sign unsubscribe links cannot sign anything else, so a plugin
- * handed the unsubscribe key gets exactly that and no more.
- */
+/** One HMAC key per purpose, derived with HKDF, so an unsubscribe key signs nothing else. */
 async function hmacKey(secret: string, purpose: string): Promise<CryptoKey> {
   const master = await crypto.subtle.importKey("raw", encoder.encode(secret), "HKDF", false, [
     "deriveKey",
@@ -65,9 +61,7 @@ export async function verifyToken(
   const signature = decodeBase64UrlBytes(token.slice(separator + 1));
   if (!signature) return null;
 
-  // Verified under the key for the purpose this route expects, before the
-  // body is even parsed. A token minted for another purpose fails here.
-  // crypto.subtle.verify is constant-time.
+  // Verified under the expected purpose's key before the body is parsed. subtle.verify is constant-time.
   const valid = await crypto.subtle.verify(
     "HMAC",
     await hmacKey(secret, purpose),
@@ -118,10 +112,7 @@ export type SignRequest = {
   ttlSeconds?: number;
 };
 
-/**
- * What a plugin gets instead of the secret: a signer that only mints tokens
- * for the purposes its own `signed` routes declared.
- */
+/** What a plugin gets instead of the secret: signs only its own declared purposes. */
 export function createScopedSigner(
   secret: string,
   pluginId: string,

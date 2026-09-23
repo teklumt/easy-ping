@@ -5,10 +5,18 @@
 // package shipped claiming >=18 until CI happened to prove otherwise.
 
 import { mongoAdapter } from "../dist/adapters/mongodb.js";
+import { mysqlAdapter } from "../dist/adapters/mysql.js";
 import { postgresAdapter } from "../dist/adapters/postgres.js";
+import { sqliteAdapter } from "../dist/adapters/sqlite.js";
 import { createNotifyClient } from "../dist/client.js";
 import { expiresIn, signToken, verifyToken } from "../dist/index.js";
-import { coreSchema, renderDrizzleSchema, renderPostgresDdl } from "../dist/schema.js";
+import {
+  coreSchema,
+  renderDrizzleSchema,
+  renderMysqlDdl,
+  renderPostgresDdl,
+  renderSqliteDdl,
+} from "../dist/schema.js";
 
 const failures = [];
 const check = (name, ok) => {
@@ -49,6 +57,12 @@ check("mongoAdapter", mongoAdapter({ collection: () => ({}) }).name === "mongodb
 
 // Takes a bare query function, so it must construct with no driver at all.
 check("postgresAdapter", postgresAdapter(async () => []).name === "postgres");
+const empty = async () => ({ rows: [], affectedRows: 0 });
+check("mysqlAdapter", mysqlAdapter(empty).name === "mysql");
+// Must not import node:sqlite at module level: that does not exist on Node 20.
+check("sqliteAdapter", sqliteAdapter(empty).name === "sqlite");
+check("renderMysqlDdl", renderMysqlDdl(coreSchema).length > 0);
+check("renderSqliteDdl", renderSqliteDdl(coreSchema).length > 0);
 
 if (failures.length > 0) {
   console.error(`node ${process.version}: ${failures.length} failure(s)`);

@@ -39,15 +39,7 @@ async function validatePayload(type: string, schema: StandardSchemaV1, payload: 
   return result.value;
 }
 
-/**
- * A channel is deliverable only if something can actually carry it.
- *
- * inApp defaults to on when unconfigured — it needs no provider, it is the
- * library's core feature, and making every app write `inApp: { enabled: true }`
- * is noise. Every other channel is off until given a provider, so a type
- * declaring `channels: ["email"]` with no email provider silently degrades to
- * in-app rather than throwing at send time.
- */
+/** inApp is on unless disabled; every other channel needs a provider or a plugin that delivers it. */
 export function isChannelUsable(
   channel: Channel,
   channels: ChannelsConfig,
@@ -73,8 +65,7 @@ async function runPrepare(
     try {
       prepared.set(plugin.id, await hook(ctx));
     } catch (error) {
-      // Fail closed, consistent with the hooks that consume this: a plugin
-      // whose bulk load failed must not then decide with stale assumptions.
+      // Fail closed: a failed bulk load must not decide with stale assumptions.
       logger.error(`plugin "${plugin.id}" prepare threw; its hooks will see undefined`, {
         type: ctx.type,
         error,
@@ -110,8 +101,7 @@ async function runBeforeSend(
         prepared: prepared.get(plugin.id),
       });
     } catch (error) {
-      // Fail closed. A crashed preferences hook failing open would email
-      // people who opted out — a compliance incident. RFC 0004 §5.
+      // Fail closed: failing open would email people who opted out. RFC 0004 §5.
       logger.error(`plugin "${plugin.id}" beforeSend threw; cancelling send`, {
         type: base.type,
         userId: base.recipient.userId,
@@ -148,8 +138,7 @@ async function runResolveChannels(
     try {
       decisions = [...(await hook({ ...base, decisions, prepared: prepared.get(plugin.id) }))];
     } catch (error) {
-      // Fail closed: keep the decisions already made rather than falling back
-      // to the permissive default. RFC 0004 §5.
+      // Fail closed: keep the decisions already made. RFC 0004 §5.
       logger.error(`plugin "${plugin.id}" resolveChannels threw; keeping prior decisions`, {
         type: base.type,
         userId: base.recipient.userId,
@@ -190,8 +179,7 @@ export async function runSend(
     isChannelUsable(channel, deps.channels, deps.plugins),
   );
 
-  // Distinguished from "no-channels" so a missing provider does not look
-  // identical to a user having opted out of everything.
+  // Distinct from "no-channels": a missing provider is not an opt-out.
   if (declared.length > 0 && requested.length === 0) {
     return {
       notifications: [],
@@ -238,8 +226,7 @@ export async function runSend(
         id: newId(),
         channel: decision.channel,
         maxAttempts: definition.maxAttempts ?? deps.maxAttempts,
-        // `defer` needs no machinery beyond not_before — the claim query
-        // already refuses rows whose time has not come. RFC 0004 §4.2.
+        // defer is just not_before; the claim query refuses rows whose time has not come. RFC 0004 §4.2.
         notBefore: decision.action === "defer" && decision.notBefore ? decision.notBefore : now,
       }));
 
@@ -292,8 +279,7 @@ export async function runSend(
         prepared: prepared.get(plugin.id),
       });
     } catch (error) {
-      // Fails open: the rows are committed, and throwing here would report a
-      // send that actually happened as a failure.
+      // Fails open: the rows are committed.
       deps.logger.error(`plugin "${plugin.id}" afterSend threw; ignoring`, { type, error });
     }
   }

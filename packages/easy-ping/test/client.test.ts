@@ -219,9 +219,7 @@ describe("notify client", () => {
   });
 
   it("discards a poll that was in flight when a mutation landed", async () => {
-    // Found by the e2e suite, which polls fast enough for the two to overlap.
-    // A poll started before markSeen returns the pre-mutation unseen count; if
-    // applied, the badge reappears a moment after the user cleared it.
+    // Found by the e2e suite: a poll started before markSeen must not overwrite the optimistic count.
     const api = server([row("a"), row("b")]);
 
     let releaseSlowPoll: (() => void) | undefined;

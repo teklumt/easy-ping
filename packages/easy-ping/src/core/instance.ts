@@ -48,11 +48,6 @@ const PLACEHOLDER_SECRETS = new Set([
   "demo-cron-secret",
 ]);
 
-/**
- * `secret` keys the HMAC behind every unsubscribe link; `cron.secret` is the
- * only thing between the internet and a flush of your email provider. A short
- * or placeholder value is a startup error, because it ships otherwise.
- */
 function checkSecretStrength(name: string, value: string) {
   if (value.length < MIN_SECRET_LENGTH || PLACEHOLDER_SECRETS.has(value.toLowerCase())) {
     throw new ConfigError(
@@ -66,8 +61,7 @@ function validate(config: EasyPingConfig<NotificationDefinitions>, plugins: read
   if (!config.database) throw new ConfigError("`database` is required.");
   if (!config.notifications) throw new ConfigError("`notifications` is required.");
 
-  // No default resolver and no dev bypass: the inbox endpoints serve per-user
-  // data, and an insecure default ships where a startup crash does not.
+  // No default resolver and no dev bypass: an insecure default ships, a crash does not.
   if (typeof config.session?.getUserId !== "function") {
     throw new ConfigError(
       "`session.getUserId` is required — the mounted endpoints serve a user's private inbox " +
@@ -111,8 +105,6 @@ function validate(config: EasyPingConfig<NotificationDefinitions>, plugins: read
     }
   }
 
-  // Two plugins claiming the same route silently shadow each other otherwise,
-  // and which one wins depends on registration order.
   const routes = new Set<string>();
   for (const plugin of plugins) {
     for (const route of plugin.routes ?? []) {
@@ -146,8 +138,7 @@ export function easyPing<TDefs extends NotificationDefinitions>(
   const leaseMs = config.delivery?.leaseMs ?? DEFAULTS.leaseMs;
   const warnings: string[] = [];
 
-  // Below this ratio a slow send is re-claimed mid-flight, and duplicates stop
-  // being occasional and become systematic. RFC 0003 §7.
+  // Below this ratio a slow send is re-claimed mid-flight. RFC 0003 §7.
   const providerTimeout = config.channels.email?.provider?.timeoutMs;
   if (providerTimeout !== undefined && providerTimeout >= leaseMs / 2) {
     warnings.push(
@@ -156,8 +147,6 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     );
   }
 
-  // Declaring `channels: ["push"]` used to do nothing at all: no warning, and
-  // a skip reason indistinguishable from the user having opted out.
   const unusable = new Map<string, string[]>();
   for (const [type, definition] of Object.entries(config.notifications)) {
     const missing = definition.channels.filter(
@@ -182,8 +171,7 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     );
   }
 
-  // The escape hatch stays visible: every custom-scoped route is named at
-  // startup with the reason its author gave. RFC 0002 §3.
+  // Custom-scoped routes are named at startup with their justification. RFC 0002 §3.
   for (const plugin of plugins) {
     for (const route of plugin.routes ?? []) {
       if (route.scope.type === "custom") {
@@ -254,11 +242,9 @@ export function easyPing<TDefs extends NotificationDefinitions>(
       },
     );
 
-    // The rows are committed by this point, so every branch below only affects
-    // latency — never whether the notification survives. RFC 0001 §8.1.
+    // Rows are committed; everything below only affects latency. RFC 0001 §8.1.
     if (result.notifications.length > 0) {
-      // Scoped to this send's deliveries. Unscoped, a single inline send in a
-      // request handler flushes the whole backlog.
+      // Scoped to this send, or an inline send flushes the whole backlog.
       const ids = result.notifications.flatMap((notification) =>
         notification.deliveries.map((delivery) => delivery.id),
       );

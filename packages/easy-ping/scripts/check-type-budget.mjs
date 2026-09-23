@@ -23,7 +23,9 @@ const GATES = [
   // the security regression suite landed (40.3k; the test file alone is
   // ~2.5k). Dominated by Drizzle's pgTable inference, so it moves with surface
   // area rather than with the plugin-type risk that `core` actually guards.
-  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 42_000) },
+  // 46k after the MySQL and SQLite adapters plus their backends in the test
+  // harness (42.0k, exactly at the old line). Surface area, not plugin types.
+  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 46_000) },
 ];
 
 let failed = false;

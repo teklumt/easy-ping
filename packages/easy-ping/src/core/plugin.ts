@@ -76,17 +76,9 @@ export type PluginHooks = {
   prepare?: (ctx: PrepareContext) => Promisable<unknown>;
   beforeSend?: (ctx: BeforeSendContext) => Promisable<BeforeSendResult>;
   resolveChannels?: (ctx: ResolveChannelsContext) => Promisable<readonly ChannelDecision[]>;
-  /**
-   * Once per send, after the rows are committed. The only hook that sees
-   * notification ids, which digests needs to bucket an entry against one.
-   * Fails open: the notification is already written.
-   */
+  /** Once per send, after commit. The only hook that sees notification ids. Fails open. */
   afterSend?: (ctx: AfterSendContext) => Promisable<void>;
-  /**
-   * Delivers one of the plugin's declared `channels`. Core carries inApp and
-   * email; everything else arrives here, which is how push, sms and slack are
-   * added without core learning about them.
-   */
+  /** Delivers one of the plugin's declared `channels`. Core carries inApp and email. */
   deliver?: (ctx: DeliverContext) => Promisable<DeliveryOutcome>;
   afterDeliver?: (ctx: AfterDeliverContext) => Promisable<void>;
 };
@@ -142,22 +134,14 @@ export type RouteDefinition = {
 export type PluginInitContext = {
   /** Scoped to the tables this plugin declares in schema(). */
   store: PluginStore;
-  /**
-   * Mints tokens for this plugin's own `signed` routes and nothing else. The
-   * master secret itself is never handed out: a plugin cannot forge another
-   * plugin's links, or anything a future signed flow relies on.
-   */
+  /** Mints tokens for this plugin's own `signed` routes only. The secret itself is never handed out. */
   sign: (request: SignRequest) => Promise<string>;
   logger: Logger;
   /** Configured notification names, so a route can refuse to store rows for types that do not exist. */
   notificationTypes: readonly string[];
   /** The app's resolver, for plugins that need timezones or addresses. */
   getRecipients: (userIds: readonly string[]) => Promise<readonly Recipient[]>;
-  /**
-   * The instance's own send(). A plugin composing a message (a digest, say)
-   * routes it back through the pipeline rather than reaching for a provider,
-   * so it inherits retry, backoff and idempotency for free.
-   */
+  /** The instance's own send(), so a composed message inherits retry, backoff and idempotency. */
   send: (
     type: string,
     args: { to: string | readonly string[]; payload: unknown; dedupeKey?: string },

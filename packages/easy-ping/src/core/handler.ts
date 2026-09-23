@@ -32,8 +32,7 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 const MAX_READ_IDS = 200;
 
-// The inbox is per-user data: never let a shared cache keep it, never let a
-// browser sniff it into something executable.
+// Per-user data: no shared caching, no sniffing.
 const PRIVATE_HEADERS: Record<string, string> = {
   "cache-control": "private, no-store",
   "x-content-type-options": "nosniff",
@@ -62,11 +61,7 @@ function harden(response: Response): Response {
 
 const encoder = new TextEncoder();
 
-/**
- * Constant-time comparison over SHA-256 digests. Node's timingSafeEqual is
- * unavailable on edge runtimes, `===` leaks through timing, and comparing the
- * raw strings would still reveal the secret's length.
- */
+/** Constant time over SHA-256 digests, so neither content nor length leaks. Works on edge runtimes. */
 async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   const [left, right] = await Promise.all(
     [a, b].map(
@@ -88,12 +83,7 @@ function routePath(url: URL, basePath: string): string {
 
 export type JsonBody = { body: Record<string, unknown> } | { error: Response };
 
-/**
- * Reads a JSON object body with a byte cap enforced while streaming, so an
- * oversized body is refused before it is buffered. Malformed JSON is 400; an
- * empty body is `{}`. Plugin routes should use this rather than
- * `request.json()`, which has no limit.
- */
+/** Reads a JSON object body with a streaming byte cap. Malformed JSON is 400; an empty body is `{}`. */
 export async function readJsonBody(
   request: Request,
   maxBytes: number = MAX_BODY_BYTES,
@@ -163,12 +153,7 @@ function originAllowed(origin: string, url: URL, request: Request, trusted: read
   );
 }
 
-/**
- * Two cheap CSRF defences for cookie-authenticated POSTs. A cross-site form
- * cannot send `application/json` without a preflight the browser will fail,
- * and it cannot forge `Origin`. Neither depends on the host app's SameSite
- * policy, which the library cannot see.
- */
+/** CSRF: a cross-site form can neither send `application/json` without a preflight nor forge `Origin`. */
 function csrfCheck(request: Request, url: URL, trusted: readonly string[]): Response | null {
   if (!isJsonContentType(request)) {
     return json({ error: "content-type must be application/json" }, 415);
@@ -189,8 +174,7 @@ export function createHandler(deps: HandlerDeps) {
     try {
       return await deps.session.getUserId(request);
     } catch (error) {
-      // A broken session lookup is a 500, never a 401. Collapsing them makes
-      // an outage look like a mass logout. RFC 0002 §1.
+      // A broken session lookup is a 500, never a 401. RFC 0002 §1.
       deps.logger.error("session.getUserId threw", { error });
       return "error";
     }
@@ -207,19 +191,14 @@ export function createHandler(deps: HandlerDeps) {
     if (!deps.cronSecret) return empty(404);
     if (!(await bearerMatches(request, deps.cronSecret))) return empty(401);
 
-    // Bounded: an overlapping scheduler must not hold a request open for as
-    // long as the backlog lasts.
+    // Bounded so an overlapping scheduler does not hold a request open for the whole backlog.
     const result = await deps.runner.drain(
       deps.cronMaxSweeps === undefined ? {} : { maxSweeps: deps.cronMaxSweeps },
     );
     return json(result);
   }
 
-  /**
-   * Plugin routes are dispatched before core ones and carry their scope with
-   * them. Authentication happens here rather than in the plugin handler, so a
-   * plugin physically cannot forget to check a signature or scope a query.
-   */
+  /** Plugin routes first; auth is enforced here so a plugin cannot forget it. */
   async function handlePluginRoute(
     route: RouteDefinition,
     request: Request,
@@ -249,8 +228,7 @@ export function createHandler(deps: HandlerDeps) {
         (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
 
       const claims = await verifyToken(deps.secret, token, route.scope.purpose);
-      // One response for every failure mode. Distinguishing expired from
-      // forged tells an attacker which part to fix. RFC 0002 §5.
+      // One response for every failure mode. RFC 0002 §5.
       if (!claims) return empty(400);
 
       return harden(await route.handler({ request, userId: claims.uid, claims, params: {} }));
@@ -297,9 +275,7 @@ export function createHandler(deps: HandlerDeps) {
       const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 20;
       const cursor = url.searchParams.get("cursor");
 
-      // The badge count rides along with the first page, so a polling client
-      // needs one request per tick instead of two. Paginating past the first
-      // page omits it: a cursor request is scrollback, not a poll.
+      // unseenCount rides on the first page only: a cursor request is scrollback, not a poll.
       const [page, unseenCount] = await Promise.all([
         deps.adapter.listNotifications({
           userId,
@@ -322,14 +298,7 @@ export function createHandler(deps: HandlerDeps) {
       if ("error" in parsed) return parsed.error;
       const before = typeof parsed.body.before === "string" ? new Date(parsed.body.before) : null;
 
-      // Defaults to now, but a client should send the timestamp of the newest
-      // notification it has actually rendered. Otherwise anything that arrived
-      // between the last poll and the click is marked seen without ever having
-      // produced a badge — the user silently misses it.
-      //
-      // +1ms because Postgres keeps microseconds while an ISO string carries
-      // only milliseconds. Without it the truncated cutoff falls *before* the
-      // very row it was taken from, and markSeen matches nothing at all.
+      // +1ms: Postgres keeps microseconds, an ISO string milliseconds; without it markSeen misses the newest row.
       const cutoff =
         before && !Number.isNaN(before.getTime()) ? new Date(before.getTime() + 1) : new Date();
 
@@ -345,14 +314,11 @@ export function createHandler(deps: HandlerDeps) {
         : [];
       if (ids.length === 0) return json({ error: "ids must be a non-empty string array" }, 400);
 
-      // Unbounded, this builds a query with as many bind parameters as the
-      // caller cares to send. Postgres caps at 65535 and degrades long before.
       if (ids.length > MAX_READ_IDS) {
         return json({ error: `at most ${MAX_READ_IDS} ids per request` }, 400);
       }
 
-      // Scoped by userId in the adapter. A miss is 404, not 403 — a 403 would
-      // confirm the row exists and belongs to someone else. RFC 0002 §2.
+      // 404, not 403: a 403 confirms the row exists. RFC 0002 §2.
       const updated = await deps.adapter.markRead(userId, ids);
       return updated === 0 ? empty(404) : json({ updated });
     }
@@ -368,8 +334,7 @@ export function createHandler(deps: HandlerDeps) {
     try {
       return await route(request);
     } catch (error) {
-      // Never let a driver error escape: on Node it becomes an unhandled
-      // rejection, on other hosts a stack trace in the response body.
+      // A thrown driver error must not escape: unhandled rejection on Node, stack trace elsewhere.
       deps.logger.error("request failed", { url: request.url, error });
       return empty(500);
     }

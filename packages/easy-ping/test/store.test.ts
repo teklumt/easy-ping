@@ -34,9 +34,7 @@ const row = (id: string, over: Partial<Record<string, unknown>> = {}) => ({
   ...over,
 });
 
-// The store is where the SQL and document dialects diverge — snake_case
-// columns and stringified json on one side, neither on the other — so the
-// contract runs against every backend rather than against Postgres alone.
+// The dialects diverge here, so the contract runs against every backend.
 describe.each(availableBackends.map((b) => [b.name, b] as const))(
   "plugin store (%s)",
   (name, backend: BackendFactory) => {
@@ -198,9 +196,7 @@ describe.each(availableBackends.map((b) => [b.name, b] as const))(
       await store.insert(TABLE, [row("a")]);
       const prefixed = createPluginStore("digests", schema, db.adapter, "app_");
 
-      // Postgres errors on a table that was never created; Mongo treats a
-      // missing collection as empty. Either is fine — reading the unprefixed
-      // rows is not.
+      // Postgres errors on a missing table, Mongo reads it as empty; either is fine, reading unprefixed rows is not.
       expect(await prefixed.find(TABLE).catch(() => [])).toHaveLength(0);
     });
   },

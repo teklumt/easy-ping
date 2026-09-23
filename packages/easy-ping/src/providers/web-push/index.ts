@@ -19,14 +19,7 @@ export type WebPushOptions = {
   allowInsecureEndpoints?: boolean;
 };
 
-/**
- * Web push over Web Crypto, so it runs on Workers and Edge as well as Node.
- *
- * Endpoints that report themselves gone are surfaced as `expired`, which the
- * push plugin turns into an immediate row deletion. Everything transient is
- * `retryable`; anything the push service will reject identically forever is
- * neither, so it fails on the first attempt.
- */
+/** Web push over Web Crypto. Gone endpoints surface as `expired`; transport failures as `retryable`. */
 export function webPush(options: WebPushOptions): PushProvider {
   const doFetch = options.fetch ?? globalThis.fetch;
   const ttl = options.ttlSeconds ?? 12 * 3600;
@@ -44,16 +37,13 @@ export function webPush(options: WebPushOptions): PushProvider {
       );
 
       if (payload.length > MAX_PAYLOAD_BYTES) {
-        // Trimming silently would deliver a truncated notification; a bigger
-        // payload will never fit, so retrying cannot help either.
+        // Truncating would deliver a broken notification; retrying cannot help.
         throw new Error(
           `push payload is ${payload.length} bytes, over the ${MAX_PAYLOAD_BYTES} byte limit`,
         );
       }
 
-      // A subscription that cannot be encrypted for, or whose endpoint is not
-      // an https URL, will never deliver. Report it so the row is pruned
-      // instead of retried five times.
+      // Unusable subscription: report invalid so it is pruned, not retried.
       let endpoint: URL;
       try {
         endpoint = new URL(message.subscription.endpoint);

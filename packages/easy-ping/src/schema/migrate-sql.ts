@@ -2,18 +2,7 @@ import type { FieldDeclaration, SchemaDeclaration, TableDeclaration } from "../c
 import { toSnakeCase } from "./declaration";
 import { renderPostgresDdl } from "./render-sql";
 
-/**
- * Introspects a live Postgres schema and emits only what is missing.
- *
- * renderPostgresDdl emits CREATE TABLE IF NOT EXISTS, which is correct exactly
- * once. On an existing database it is a silent no-op, so an adopter who
- * bootstrapped with raw SQL had no way to pick up a column a later version
- * added — their app broke at runtime with "column does not exist" instead.
- *
- * Additive only, on purpose. Dropping a column or changing a type is
- * destructive and context-dependent, so those are reported in `unsupported`
- * rather than guessed at.
- */
+/** Introspects a live Postgres schema and emits only what is missing. Additive only: drops and type changes land in `unsupported`. */
 
 const SQL_TYPE: Record<FieldDeclaration["type"], string> = {
   string: "text",
@@ -48,6 +37,27 @@ const indexName = (
 
 export type LiveColumn = { table: string; column: string; type: string; nullable: boolean };
 
+/** A row as INTROSPECT_SQL returns it; `LiveColumn` uses the short forms and both are accepted. */
+export type LiveColumnRow =
+  | LiveColumn
+  | {
+      table_name: string;
+      column_name: string;
+      data_type: string;
+      is_nullable: string | boolean;
+    };
+
+/** Accepts either shape, so raw rows and hand-mapped rows both work. */
+function normaliseColumn(row: LiveColumnRow): LiveColumn {
+  if ("table" in row) return row;
+  return {
+    table: String(row.table_name),
+    column: String(row.column_name),
+    type: String(row.data_type),
+    nullable: typeof row.is_nullable === "boolean" ? row.is_nullable : row.is_nullable === "YES",
+  };
+}
+
 export type MigrationPlan = {
   /** Run in order. Empty means the live schema already matches. */
   statements: readonly string[];
@@ -57,13 +67,10 @@ export type MigrationPlan = {
   createdTables: readonly string[];
 };
 
-/**
- * Reads the live column list. Pass a function that runs the query — this
- * module stays driver-agnostic, as the rest of the schema tooling does.
- */
-export type Introspector = () => Promise<readonly LiveColumn[]>;
+/** Reads the live column list; a function, so this module stays driver-agnostic. */
+export type Introspector = () => Promise<readonly LiveColumnRow[]>;
 
-/** The query an Introspector should run. Exported so callers need not retype it. */
+/** The query an Introspector should run; raw rows are accepted as they come back. */
 export const INTROSPECT_SQL = `
   SELECT table_name, column_name, data_type, is_nullable
   FROM information_schema.columns
@@ -78,7 +85,8 @@ export async function planPostgresMigration(
   const live = await introspect();
 
   const byTable = new Map<string, Map<string, LiveColumn>>();
-  for (const column of live) {
+  for (const row of live) {
+    const column = normaliseColumn(row);
     const columns = byTable.get(column.table) ?? new Map<string, LiveColumn>();
     columns.set(column.column, column);
     byTable.set(column.table, columns);
@@ -104,8 +112,7 @@ export async function planPostgresMigration(
       const found = existing.get(column);
 
       if (!found) {
-        // NOT NULL on a populated table fails without a default, so a required
-        // column that cannot fill itself is added nullable and flagged.
+        // NOT NULL fails on a populated table without a default: added nullable and flagged.
         const canFill = spec.defaultNow || spec.default !== undefined;
         const nullability = spec.required && canFill ? " NOT NULL" : "";
 

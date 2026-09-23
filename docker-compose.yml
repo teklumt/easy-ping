@@ -19,6 +19,23 @@ services:
       timeout: 3s
       retries: 30
 
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: easyping
+      MYSQL_DATABASE: easyping_test
+    # root, because each test file creates its own database.
+    ports:
+      - "33069:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-peasyping"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
   mongo:
     image: mongo:7
     restart: unless-stopped

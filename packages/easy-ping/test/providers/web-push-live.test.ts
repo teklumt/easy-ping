@@ -4,24 +4,7 @@ import ece from "http_ece";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateVapidKeys, webPush } from "../../src/providers/web-push";
 
-/**
- * A real push through Mozilla's production push service.
- *
- * Every other push test talks to a stub, which accepts anything. A real
- * service validates the VAPID JWT, the audience, the TTL and the aes128gcm
- * framing, and rejects what it does not like. This is the only test that
- * proves the bytes we emit are acceptable to infrastructure we do not control.
- *
- * Firefox's push client speaks autopush over a WebSocket: hello, then register
- * a channel with the application server key, which returns the same
- * https://updates.push.services.mozilla.com/... endpoint a PushSubscription
- * carries. Standing in for the browser is what makes the endpoint real.
- *
- * Opt-in: it needs the internet, and CI must not go red because someone else's
- * service is having a bad afternoon.
- *
- *   EASY_PING_LIVE_PUSH=1 pnpm --filter easy-ping test web-push-live
- */
+// A real push through Mozilla's production service; opt-in with EASY_PING_LIVE_PUSH=1.
 
 const live = process.env.EASY_PING_LIVE_PUSH === "1";
 const AUTOPUSH = "wss://push.services.mozilla.com";

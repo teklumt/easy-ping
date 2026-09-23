@@ -3,29 +3,11 @@ import type { Channel } from "../core/types";
 
 export type ConformanceContext = {
   adapter: DatabaseAdapter;
-  /**
-   * Forces a delivery's attempt count. Not reachable through the public API —
-   * the adapter would have marked the row failed on the way there — so each
-   * backend writes it directly.
-   */
+  /** Forces a delivery's attempt count; not reachable through the public API. */
   setAttempts: (deliveryId: string, attempts: number) => Promise<void>;
-  /**
-   * Empties the tables. Cases must run against a clean table: claims are
-   * ordered by not_before ASC and bounded by limit, so leftover rows from an
-   * earlier case can push the row under test out of the claim window.
-   */
+  /** Empties the tables. Leftover rows can push the row under test out of the claim window. */
   reset: () => Promise<void>;
-  /**
-   * Holds a row lock on a separate connection for the duration of `fn`.
-   *
-   * Required to test SKIP LOCKED deterministically. Two Promise.all'd claims
-   * do not reliably overlap — they complete in single-digit milliseconds and
-   * simply queue — so a race-based test passes even with no locking at all.
-   *
-   * Only meaningful where a claim can block on someone else's lock. A document
-   * store whose claim is a single atomic update has nothing to skip, so cases
-   * tagged `rowLock` do not apply to it.
-   */
+  /** Holds a row lock on a separate connection for the duration of `fn`, to test SKIP LOCKED deterministically. Only where a claim can block. */
   lockRow?: (deliveryId: string, fn: () => Promise<void>) => Promise<void>;
 };
 
@@ -91,13 +73,7 @@ const CLAIM = { limit: 10, leaseMs: 60_000 };
 
 export const adapterConformanceCases: readonly ConformanceCase[] = [
   {
-    /**
-     * The case that actually distinguishes a correct adapter.
-     *
-     * A row locked by another transaction must be *skipped*, not waited on.
-     * Without SKIP LOCKED the claim blocks until the holder commits, which on
-     * a busy table serialises every worker behind the slowest one.
-     */
+    /** A row locked by another transaction must be skipped, not waited on. */
     name: "a row locked by another transaction is skipped, not waited on",
     requires: "rowLock",
     run: async (ctx) => {
@@ -137,8 +113,7 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
     run: async (ctx) => {
       await seed(ctx, { count: 40 });
 
-      // Eight callers over 40 rows, repeated — a single Promise.all pair is
-      // too fast to overlap and proves nothing on its own.
+      // Eight callers over 40 rows; a single pair is too fast to overlap.
       const claimed = await Promise.all(
         Array.from({ length: 8 }, () =>
           ctx.adapter.claimPendingDeliveries({ limit: 5, leaseMs: 60_000, claimToken: uid("t") }),
@@ -353,8 +328,7 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
   },
 
   {
-    // The whole point of the status: a delivery with nothing to do must not
-    // show up in the view an operator reads to find real breakage.
+    // A delivery with nothing to do must stay out of the failure view.
     name: "a skipped delivery is terminal and stays out of getFailedDeliveries",
     run: async (ctx) => {
       const seeded = await seed(ctx, { maxAttempts: 5 });
@@ -376,8 +350,7 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
       });
       assert(!failed.some((row) => row.id === id), "a skipped delivery was reported as failed");
 
-      // Terminal: it must never be handed out again, or a user with no devices
-      // is retried on every sweep forever.
+      // Terminal: never handed out again.
       const reclaimed = await ctx.adapter.claimPendingDeliveries({
         ...CLAIM,
         claimToken: uid("t"),
@@ -441,16 +414,7 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
   },
 
   {
-    /**
-     * createdAt must come from the same clock as the cutoff it is compared to.
-     *
-     * An adapter that leaves createdAt to a database DEFAULT now() is comparing
-     * the database clock against the application clock. On one machine they
-     * agree and this never fails; in production they are different hosts, and a
-     * database a second ahead means markSeen(now) silently misses the newest
-     * notifications and the unseen badge never clears. Found when a laptop
-     * resumed from sleep with its Docker VM 6s ahead.
-     */
+    // createdAt must come from the same clock as the cutoffs it is compared to; a database DEFAULT now() breaks markSeen under NTP skew.
     name: "createdAt comes from the caller clock, not the database clock",
     run: async (ctx) => {
       const userId = uid("user");
@@ -462,8 +426,7 @@ export const adapterConformanceCases: readonly ConformanceCase[] = [
       const createdAt = notifications[0]?.createdAt;
       assert(createdAt, "seed produced no notification");
 
-      // A second of slack for a slow round trip, far under the skew that breaks
-      // markSeen but tight enough to catch a foreign clock.
+      // A second of slack for a slow round trip.
       const skewMs = Math.max(
         before.getTime() - createdAt.getTime(),
         createdAt.getTime() - after.getTime(),

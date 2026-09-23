@@ -10,13 +10,7 @@ export type LocalMoment = {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/**
- * Reads the wall clock in a recipient's zone.
- *
- * hourCycle h23 rather than hour12:false — the latter renders midnight as "24"
- * in several locales, which silently makes the send-hour comparison wrong for
- * one hour a day.
- */
+/** Wall clock in the recipient's zone. hourCycle h23: hour12:false renders midnight as "24" in some locales. */
 export function localMoment(timezone: string, now: Date): LocalMoment {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -44,14 +38,7 @@ const shiftDays = (date: string, days: number): string => {
   return shifted.toISOString().slice(0, 10);
 };
 
-/**
- * Identifies the digest period a moment falls in.
- *
- * Scheduling keys off this string rather than bucketing users by UTC offset.
- * Offsets shift twice a year, and getting that wrong sends someone two digests
- * or none. A period key cannot: it is derived from the local calendar, so DST
- * is already accounted for and a missed cron run simply catches up.
- */
+/** The digest period a moment falls in, keyed off the local calendar so DST cannot double or skip a send. */
 export function periodKey(window: DigestWindow, moment: LocalMoment, sendWeekday: number): string {
   if (window === "daily") return moment.date;
 

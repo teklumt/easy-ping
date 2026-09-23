@@ -1,9 +1,4 @@
-/**
- * Exponential backoff with ±20% jitter. RFC 0001 §4.
- *
- * These are minimums, not promises — the sweep interval floors them. Under an
- * hourly cron a 30s backoff is an hour.
- */
+/** Exponential backoff with ±20% jitter, floored by the sweep interval. RFC 0001 §4. */
 const SCHEDULE_MS = [30_000, 120_000, 480_000, 1_920_000] as const;
 
 export type Backoff = "exponential" | ((attempt: number) => number);

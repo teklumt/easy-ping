@@ -1,13 +1,6 @@
 import { decodeBase64UrlBytes, encodeBase64Url } from "../../core/base64url";
 
-/**
- * VAPID (RFC 8292) and aes128gcm payload encryption (RFC 8291 over RFC 8188),
- * on Web Crypto.
- *
- * The `web-push` package is node:crypto only, so it cannot run on Cloudflare
- * Workers or Vercel Edge — the runtimes this library targets. Everything here
- * uses crypto.subtle and therefore runs anywhere the rest of the package does.
- */
+/** VAPID (RFC 8292) and aes128gcm (RFC 8291 over RFC 8188) on Web Crypto, so it runs on Workers and Edge. */
 
 const utf8 = (value: string) => new TextEncoder().encode(value);
 
@@ -46,8 +39,7 @@ function requireBytes(
 
 /** Web Crypto's HKDF does extract and expand in one call. */
 async function hkdf(
-  // Uint8Array<ArrayBuffer>, not bare Uint8Array: the latter widens to
-  // ArrayBufferLike, which Web Crypto will not accept as a BufferSource.
+  // Uint8Array<ArrayBuffer>: a bare Uint8Array is not a BufferSource.
   salt: Uint8Array<ArrayBuffer>,
   ikm: Uint8Array<ArrayBuffer>,
   info: Uint8Array<ArrayBuffer>,
@@ -72,13 +64,7 @@ export type EncryptedPush = {
   serverPublicKey: Uint8Array<ArrayBuffer>;
 };
 
-/**
- * RFC 8291 §3.4 then RFC 8188 §2.
- *
- * `salt` and `serverKeys` are injectable so tests can pin them; production
- * always generates fresh ones, and reusing a salt with the same key would be
- * catastrophic for GCM.
- */
+/** RFC 8291 §3.4 then RFC 8188 §2. `salt` and `serverKeys` are injectable for tests only. */
 export async function encryptPayload(
   plaintext: Uint8Array<ArrayBuffer>,
   userAgentPublicKey: string,
@@ -119,8 +105,7 @@ export async function encryptPayload(
     await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, serverKeys.privateKey, 256),
   );
 
-  // The receiver's key comes first; swapping the order yields a key the
-  // browser cannot derive, and the push simply never decrypts.
+  // Receiver's key first, or the browser cannot derive the key.
   const keyInfo = concat(utf8("WebPush: info"), new Uint8Array([0]), uaPublic, serverPublic);
   const ikm = await hkdf(auth, shared, keyInfo, 32);
 
@@ -139,8 +124,7 @@ export async function encryptPayload(
 
   const aesKey = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
 
-  // 0x02 marks the final record. 0x01 would mean "more records follow" and the
-  // receiver would wait for one that never arrives.
+  // 0x02 marks the final record.
   const padded = concat(plaintext, new Uint8Array([2]));
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, padded),
@@ -172,11 +156,7 @@ export async function generateVapidKeys(): Promise<VapidKeys> {
   return { publicKey: encodeBase64Url(publicKey), privateKey: jwk.d };
 }
 
-/**
- * VAPID keys are distributed as a raw public point plus a bare scalar, but Web
- * Crypto will only import a private EC key as JWK — which needs x and y. They
- * are recovered by slicing the uncompressed public point.
- */
+/** Web Crypto imports a private EC key only as JWK, so x and y are recovered from the public point. */
 async function importVapidKey(keys: VapidKeys): Promise<CryptoKey> {
   const publicKey = requireBytes(keys.publicKey, "vapid publicKey", 65);
   if (publicKey[0] !== 0x04) throw new Error("vapid publicKey must be an uncompressed EC point");

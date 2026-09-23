@@ -13,13 +13,7 @@ import type { Channel, DeliveryRecord, DeliveryStatus, NotificationRecord } from
 
 type Document = Record<string, unknown>;
 
-/**
- * Minimal structural view of the pieces of the Mongo driver this uses.
- *
- * Typed structurally rather than against the real `Db` so `mongodb` stays an
- * optional peer dependency: an app on Postgres never installs it, and its
- * types are not needed to typecheck this file.
- */
+/** Structural, so `mongodb` stays an optional peer dependency. */
 type MongoCollection = {
   insertMany(docs: Document[], options?: unknown): Promise<unknown>;
   insertOne(doc: Document, options?: unknown): Promise<unknown>;
@@ -68,12 +62,7 @@ type MongoClient = {
 export type MongoAdapterOptions = {
   /** Prefixes every collection name, matching the SQL adapter's table prefix. */
   prefix?: string;
-  /**
-   * The MongoClient the db came from. Supplying it makes createNotifications
-   * atomic; without it a crash between the two writes can leave a notification
-   * with no deliveries. Transactions need a replica set, so it is opt-in — a
-   * standalone mongod rejects the session outright.
-   */
+  /** Makes createNotifications atomic. Needs a replica set, so it is opt-in. */
   client?: unknown;
 };
 
@@ -134,7 +123,6 @@ function toDelivery(doc: Document): DeliveryRecord {
 /** The store hands `id`; documents key on `_id`. */
 const toMongoField = (field: string) => (field === "id" ? "_id" : field);
 
-/** Translates a WhereClause into a Mongo filter. */
 function toFilter(where: WhereClause): Document {
   const filter: Document = {};
 
@@ -147,8 +135,7 @@ function toFilter(where: WhereClause): Document {
     }
 
     if (!isOperator(condition)) {
-      // The store already refuses these; this is the last line before the
-      // driver, where `{ $ne: null }` stops being data and becomes a query.
+      // Last line before the driver, where `{ $ne: null }` becomes a query.
       if (typeof condition === "object" && !(condition instanceof Date)) {
         throw new Error(`mongo filter on "${field}" received an object; only scalars are bound`);
       }
@@ -188,15 +175,7 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
   const notifications = () => database.collection(`${prefix}notification`);
   const deliveries = () => database.collection(`${prefix}notification_delivery`);
 
-  /**
-   * Runs `fn` in a transaction when a client was supplied, and plainly
-   * otherwise. The session must reach every command inside, so `fn` receives
-   * it — a write that omits it silently runs outside the transaction.
-   *
-   * One transaction per notification, not per batch: a duplicate key aborts
-   * the transaction it happens in, and dedupe is the expected path here, so a
-   * batch-wide transaction would throw away the notifications around it.
-   */
+  /** One transaction per notification: a duplicate key aborts the transaction it happens in, and dedupe is the expected path. */
   async function atomically<T>(fn: (session?: MongoSession) => Promise<T>): Promise<T> {
     if (!client) return fn();
 
@@ -227,8 +206,7 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
           await atomically(async (session) => {
             const options = session ? { session } : undefined;
 
-            // The notification goes in first: it carries the unique dedupe
-            // index, so a duplicate is rejected before any delivery is written.
+            // Notification first: it carries the unique dedupe index.
             await notifications().insertOne(
               {
                 _id: row.id,
@@ -297,9 +275,7 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
         (eligible.$and as Document[]).push({ _id: { $in: [...args.ids] } });
       }
 
-      // findOneAndUpdate is atomic per document, so two concurrent callers
-      // cannot be handed the same delivery. updateMany would be one round trip
-      // but gives no way to learn which documents this call actually won.
+      // findOneAndUpdate is atomic per document; updateMany cannot say which rows this call won.
       const claimed: Document[] = [];
       for (let taken = 0; taken < args.limit; taken += 1) {
         const doc = await deliveries().findOneAndUpdate(
@@ -313,7 +289,6 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
 
       if (claimed.length === 0) return [];
 
-      // One lookup for the batch rather than one per delivery.
       const parents = await notifications()
         .find({ _id: { $in: claimed.map((doc) => doc.notificationId) } })
         .toArray();
@@ -350,8 +325,7 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
         const skipped = outcome.result === "skipped";
         const retryable = failed && outcome.retryable;
 
-        // An aggregation-pipeline update so the terminal-vs-retry decision
-        // reads maxAttempts from the document itself, as the SQL CASE does.
+        // Pipeline update, so the retry decision reads maxAttempts from the document.
         await deliveries().updateOne({ _id: id }, [
           {
             $set: {
@@ -367,17 +341,14 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
                 : skipped
                   ? "skipped"
                   : "sent",
-              // $literal: an error message starting with "$" would otherwise
-              // be read as a field path.
+              // $literal: an error starting with "$" would be read as a field path.
               lastError: failed
                 ? { $literal: outcome.error.slice(0, 2000) }
                 : skipped
                   ? { $literal: outcome.reason.slice(0, 2000) }
                   : null,
               notBefore: nextAttemptAt ?? "$notBefore",
-              // Written unconditionally: if the lease expired and another
-              // worker re-sent, the duplicate already happened and the true
-              // terminal state beats leaving the row wedged in "claimed".
+              // Unconditional: terminal state beats a wedged row. RFC 0003 §6.
               claimedAt: null,
               claimedBy: null,
               updatedAt: now,
@@ -429,8 +400,7 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
     async markRead(userId: string, notificationIds: readonly string[]) {
       if (notificationIds.length === 0) return 0;
 
-      // Scoped by userId as well as id, and idempotent: re-marking a read
-      // notification reports success rather than a 404.
+      // Scoped by userId; idempotent, so no 404 on a re-mark.
       const filter = { userId, _id: { $in: [...notificationIds] } };
       await notifications().updateMany(
         { ...filter, readAt: null },
@@ -491,14 +461,12 @@ export function mongoAdapter(db: unknown, options: MongoAdapterOptions = {}): Da
         return documents.length;
       }
 
-      // Upsert keyed on the conflict fields, matching ON CONFLICT DO UPDATE.
       let written = 0;
       for (const document of documents as Document[]) {
         const key: Document = {};
         for (const field of onConflict) key[toMongoField(field)] = document[toMongoField(field)];
 
-        // _id goes in $setOnInsert, never $set: Mongo rejects an update that
-        // would modify it, so a conflicting upsert must leave it alone.
+        // _id only in $setOnInsert: Mongo rejects an update that would modify it.
         const { _id, ...updatable } = document;
         const update: Document = { $set: updatable };
         if (_id !== undefined) update.$setOnInsert = { _id };

@@ -64,6 +64,16 @@
       "import": "./dist/adapters/postgres.js",
       "require": "./dist/adapters/postgres.cjs"
     },
+    "./adapters/mysql": {
+      "types": "./dist/adapters/mysql.d.ts",
+      "import": "./dist/adapters/mysql.js",
+      "require": "./dist/adapters/mysql.cjs"
+    },
+    "./adapters/sqlite": {
+      "types": "./dist/adapters/sqlite.d.ts",
+      "import": "./dist/adapters/sqlite.js",
+      "require": "./dist/adapters/sqlite.cjs"
+    },
     "./schema": {
       "types": "./dist/schema.d.ts",
       "import": "./dist/schema.js",
@@ -158,6 +168,7 @@
     "drizzle-orm": "^0.45.2",
     "http_ece": "^1.2.1",
     "mongodb": "^7.6.0",
+    "mysql2": "^3.24.4",
     "postgres": "^3.4.9",
     "react": "^19.2.8",
     "tsup": "^8.3.0",

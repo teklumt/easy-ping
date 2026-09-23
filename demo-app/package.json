@@ -11,6 +11,7 @@
     "drizzle-orm": "^0.45.2",
     "easy-ping": "workspace:*",
     "mongodb": "^7.6.0",
+    "mysql2": "^3.24.4",
     "postgres": "^3.4.9"
   },
   "devDependencies": {

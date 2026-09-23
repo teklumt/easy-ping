@@ -2,11 +2,7 @@ import type { SchemaDeclaration } from "../core/plugin";
 
 export const toSnakeCase = (value: string) => value.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
-/**
- * Core tables in the format plugins use. Less expressive than the hand-written
- * Drizzle schema (no partial indexes, ordering or cascade) — a drift test
- * asserts the two agree on the fields they share.
- */
+/** Core tables in the plugin format. A drift test asserts it agrees with the Drizzle schema. */
 export const coreSchema = {
   notification: {
     tableName: "notification",

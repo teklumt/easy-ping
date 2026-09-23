@@ -68,13 +68,7 @@ const PREFERENCE_SCHEMA = {
   },
 } satisfies SchemaDeclaration;
 
-/**
- * One Postgres schema per test file.
- *
- * Vitest runs files in parallel, so a shared set of tables means one file's
- * TRUNCATE wipes another's fixtures mid-run. Isolating by schema keeps the
- * parallelism instead of paying for it with `fileParallelism: false`.
- */
+// One Postgres schema per test file: vitest runs files in parallel.
 export async function createTestDatabase(namespace: string): Promise<TestDatabase> {
   const schema = `test_${namespace}`;
 

@@ -10,14 +10,7 @@ import { buildUnsubscribeToken, preferences } from "../src/plugins/preferences";
 import { availableBackends, type Backend, type BackendFactory } from "./helpers/backends";
 import { waitUntil } from "./helpers/wait";
 
-/**
- * Everything except email, exercised over a real socket.
- *
- * The other suites call handler.GET(new Request(...)) in-process, which never
- * touches serialisation, header casing, status codes on the wire, or the
- * client's own fetch. This one starts a server, points the real client at it,
- * and asserts against live Postgres.
- */
+// Everything except email over a real socket, so serialisation and headers are exercised.
 
 const SECRET = "e2e-signing-secret";
 const CRON_SECRET = "e2e-cron-secret-0123456789";

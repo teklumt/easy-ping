@@ -51,11 +51,7 @@ async function withTimeout<T>(
   }
 }
 
-/**
- * What gets persisted to `last_error`. Provider responses quote the offending
- * field, which for a bad recipient is the address itself; that column outlives
- * the notification and is read by admin tooling, so addresses do not go in.
- */
+/** Persisted to `last_error`, which admin tooling reads: addresses do not go in. */
 export const redactErrorMessage = (text: string) =>
   text.replace(/[^\s"'<>()[\]{},;]+@[^\s"'<>()[\]{},;]+/g, "[redacted-email]");
 
@@ -182,8 +178,7 @@ export function createRunner(deps: RunnerDeps) {
           isTerminal,
         });
       } catch (error) {
-        // Fail open. The message is already sent; a broken analytics hook must
-        // not mark it failed and trigger a retry. RFC 0004 §5.
+        // Fail open: the message is already sent. RFC 0004 §5.
         deps.logger.error(`plugin "${plugin.id}" afterDeliver threw; ignoring`, {
           deliveryId: delivery.id,
           error,
@@ -303,8 +298,7 @@ export function createRunner(deps: RunnerDeps) {
     return {
       stop: async () => {
         stopped = true;
-        // Awaiting the loop lets the in-flight sweep finish and release its
-        // leases, rather than leaving rows claimed until they expire.
+        // Let the in-flight sweep finish and release its leases.
         await loop;
       },
     };

@@ -5,13 +5,7 @@ import { INTROSPECT_SQL, planPostgresMigration } from "../src/schema/migrate-sql
 import { renderPostgresDdl } from "../src/schema/render-sql";
 import { postgresReachable, TEST_DATABASE_URL } from "./helpers/pg";
 
-/**
- * The upgrade path for anyone who bootstrapped with raw SQL.
- *
- * renderPostgresDdl is CREATE TABLE IF NOT EXISTS, so on an existing database
- * it does nothing at all. A version that adds a column used to leave those
- * adopters with a table that silently lacked it.
- */
+// The upgrade path for raw-SQL bootstraps, which CREATE TABLE IF NOT EXISTS cannot provide.
 
 const available = await postgresReachable();
 const SCHEMA = "test_migrate";
@@ -40,6 +34,9 @@ const introspect = async () => {
   }));
 };
 
+/** Raw rows, exactly as INTROSPECT_SQL returns them, with no hand-mapping. */
+const introspectRaw = async () => (await db().unsafe(INTROSPECT_SQL)) as never;
+
 const V1 = {
   widget: {
     tableName: "widget",
@@ -65,6 +62,28 @@ describe.skipIf(!available)("planPostgresMigration", () => {
   const apply = async (plan: { statements: readonly string[] }) => {
     for (const statement of plan.statements) await db().unsafe(statement);
   };
+
+  it("plans from raw INTROSPECT_SQL rows, without the caller mapping them", async () => {
+    const V2raw = {
+      widget: {
+        ...V1.widget,
+        fields: { ...V1.widget.fields, colour: { type: "string" } },
+      },
+    } satisfies SchemaDeclaration;
+
+    await apply(await planPostgresMigration(introspectRaw, V1));
+
+    // Unmapped rows must be understood, or the planner sees no tables and emits no-op CREATEs.
+    const plan = await planPostgresMigration(introspectRaw, V2raw);
+
+    expect(plan.createdTables).toHaveLength(0);
+    expect(plan.statements.some((statement) => statement.includes("ADD COLUMN"))).toBe(true);
+
+    await apply(plan);
+
+    const columns = await introspect();
+    expect(columns.some((c) => c.table === "widget" && c.column === "colour")).toBe(true);
+  });
 
   it("creates a table that does not exist yet", async () => {
     const plan = await planPostgresMigration(introspect, V1);
