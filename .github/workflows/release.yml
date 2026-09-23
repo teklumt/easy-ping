@@ -47,11 +47,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      # tsup builds the .d.ts files for 20 entry points in one worker thread,
-      # which outgrew the runner's default heap at 0.7.0 (ERR_WORKER_OUT_OF_MEMORY).
       - run: pnpm build
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
 
       # Maintains the version PR, and on merge publishes and tags.
       #

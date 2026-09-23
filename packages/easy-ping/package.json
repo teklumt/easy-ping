@@ -170,7 +170,7 @@
     }
   },
   "scripts": {
-    "build": "node scripts/clean.mjs && tsup",
+    "build": "node scripts/build.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
