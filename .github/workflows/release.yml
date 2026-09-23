@@ -59,12 +59,18 @@ jobs:
       #
       # This also tags the release and opens a GitHub Release from the
       # changelog, which is what puts a version in the repo sidebar.
-      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+      #
+      # v2 of the action is the one that understands @changesets/cli 3. v1
+      # detected published packages by grepping "New tag:" lines that cli 3 no
+      # longer prints, which is why 0.6.1 and 0.7.0 reached npm but got no git
+      # tag and no GitHub Release. v2 reads the CHANGESETS_OUTPUT file instead,
+      # and pushes commits and tags through the GitHub API (signed) by default.
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: pnpm changeset version
-          publish: pnpm changeset publish
-          commit: "chore: release"
-          title: "chore: release"
-          createGithubReleases: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: pnpm changeset version
+          publish-script: pnpm changeset publish
+          commit-message: "chore: release"
+          pr-title: "chore: release"
+          create-github-releases: true
+          # v2 reads the token from this input; the GITHUB_TOKEN env var is ignored.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
