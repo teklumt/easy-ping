@@ -3,7 +3,7 @@
 # easy-ping
 
 **Own your notifications.**
-In-app inbox, transactional email and web push — running inside your app, stored in your
+In-app inbox, transactional email, web push and Telegram — running inside your app, stored in your
 database, with no per-notification bill.
 
 [![npm](https://img.shields.io/npm/v/easy-ping?color=%23e0362a&label=npm)](https://www.npmjs.com/package/easy-ping)
@@ -47,7 +47,7 @@ hand-rolling it badly.
 | **Cost per notification** | none | none, you pay for servers | metered per send |
 | **License** | MIT, all of it | MIT core, commercial modules | proprietary |
 | **Visual workflow editor** | **no**, a notification is code | yes | yes |
-| **Channels out of the box** | **in-app, email, web push** | dozens | dozens |
+| **Channels out of the box** | **in-app, email, web push, Telegram** | dozens | dozens |
 
 The last two rows are the trade. If you need a workflow editor a non-developer can edit, use one
 of the others — they are good tools solving a bigger problem.
@@ -56,7 +56,7 @@ of the others — they are good tools solving a bigger problem.
 Every "no queue required" decision below follows from that.
 
 > **Status: published, pre-1.0.** The core pipeline, all three adapters, the React client and the
-> preferences, digests and push plugins are covered by tests against real databases. Web push is
+> preferences, digests, push and telegram plugins are covered by tests against real databases. Web push is
 > verified end to end against Mozilla's production push service and cross-checked against
 > `http_ece`. The bell updates over a server-sent event stream with polling as the fallback;
 > batching is not built, and the Resend provider has only been exercised against a stub. Minor
@@ -379,10 +379,25 @@ single replica.
 | `inApp` | ✅ built in, on by default, needs no provider |
 | `email` | ✅ Resend provider; the interface is open for others |
 | `push` | ✅ push plugin + `webPush()` — VAPID and aes128gcm on Web Crypto, so it runs on edge too |
+| `telegram` | ✅ telegram plugin + `telegramBot()` — one-tap linking through the bot, webhook or long-poll |
 | `sms` | ⬜ not implemented |
 | `slack` | ⬜ not implemented |
 
-A channel is usable when core carries it (`inApp`, `email`) or a plugin declares it and can `deliver` it. That is how push works, and how sms and slack will.
+A channel is usable when core carries it (`inApp`, `email`) or a plugin declares it and can `deliver` it. That is how push and telegram work, and how sms and slack will.
+
+```ts
+import { telegram } from "easy-ping/plugins/telegram";
+import { telegramBot } from "easy-ping/providers/telegram";
+
+telegram({
+  provider: telegramBot({ token: process.env.TELEGRAM_BOT_TOKEN! }),
+  botUsername: "your_bot",
+  webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,   // or plugin.poll() in development
+  render: ({ payload }) => ({ text: `<b>${escapeHtml(payload.authorName)}</b> replied` }),
+});
+```
+
+`POST /telegram/link` returns a `t.me/<bot>?start=<code>` link; the user taps it, the bot stores the chat, and every `send()` with `telegram` in its channels reaches it. Blocked chats prune themselves.
 
 Declaring a channel nothing can carry **warns at startup** and reports `skipped: "channel-unavailable"` — deliberately distinct from `"no-channels"`, so a missing provider never looks like a user opt-out.
 
@@ -475,6 +490,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ digests plugin, timezone-aware | |
 | ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
 | ✅ push verified against a live push service | Mozilla autopush, plus a cross-check against `http_ece` |
+| ✅ telegram plugin + bot provider | one-tap linking, webhook or long-poll, blocked chats pruned |
 | ✅ scoped plugin storage, so plugins own their tables | |
 | ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()`; MySQL and SQLite are bootstrap-only for now |
 | ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |

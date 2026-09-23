@@ -1,4 +1,4 @@
-export type Channel = "inApp" | "email" | "push" | "sms" | "slack";
+export type Channel = "inApp" | "email" | "push" | "telegram" | "sms" | "slack";
 
 export type DeliveryStatus = "pending" | "claimed" | "sent" | "failed" | "skipped";
 

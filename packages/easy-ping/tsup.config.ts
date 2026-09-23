@@ -32,6 +32,8 @@ export default defineConfig([
       "plugins/preferences": "src/plugins/preferences/index.ts",
       "plugins/digests": "src/plugins/digests/index.ts",
       "plugins/push": "src/plugins/push/index.ts",
+      "plugins/telegram": "src/plugins/telegram/index.ts",
+      "providers/telegram": "src/providers/telegram/index.ts",
       "plugins/preferences-client": "src/plugins/preferences/client.ts",
     },
   },

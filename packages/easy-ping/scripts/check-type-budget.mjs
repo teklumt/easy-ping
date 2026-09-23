@@ -16,10 +16,12 @@ import { execSync } from "node:child_process";
 const GATES = [
   // 9k after the event-driven transport (8.5k): the Signals seam, EventsConfig
   // and the client's transport options are new surface, not plugin composition.
+  // 10k after the telegram plugin (8.9k): src/plugins is inside this gate, so a
+  // new plugin's own types count here even though composition did not change.
   {
     name: "core",
     project: "tsconfig.core.json",
-    ceiling: Number(process.env.TYPE_BUDGET_CORE ?? 9_000),
+    ceiling: Number(process.env.TYPE_BUDGET_CORE ?? 10_000),
   },
   // Raised from 32k when the plugin store landed (30.2k), and from 38k when
   // the security regression suite landed (40.3k; the test file alone is
@@ -27,7 +29,8 @@ const GATES = [
   // area rather than with the plugin-type risk that `core` actually guards.
   // 46k after the MySQL and SQLite adapters plus their backends in the test
   // harness (42.0k, exactly at the old line). Surface area, not plugin types.
-  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 46_000) },
+  // 50k after vitest 5 (45.9k) and the telegram plugin + provider with their tests (47.2k).
+  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 50_000) },
 ];
 
 let failed = false;

@@ -22,6 +22,7 @@
     "push-notifications",
     "vapid",
     "service-worker",
+    "telegram",
     "email",
     "transactional-email",
     "resend",
@@ -130,10 +131,20 @@
       "import": "./dist/plugins/push.js",
       "require": "./dist/plugins/push.cjs"
     },
+    "./plugins/telegram": {
+      "types": "./dist/plugins/telegram.d.ts",
+      "import": "./dist/plugins/telegram.js",
+      "require": "./dist/plugins/telegram.cjs"
+    },
     "./providers/web-push": {
       "types": "./dist/providers/web-push.d.ts",
       "import": "./dist/providers/web-push.js",
       "require": "./dist/providers/web-push.cjs"
+    },
+    "./providers/telegram": {
+      "types": "./dist/providers/telegram.d.ts",
+      "import": "./dist/providers/telegram.js",
+      "require": "./dist/providers/telegram.cjs"
     },
     "./browser": {
       "types": "./dist/browser.d.ts",

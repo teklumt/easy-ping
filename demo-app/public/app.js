@@ -97,6 +97,46 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   // No manual refresh: the event stream (or the piggyback header) brings it in.
 });
 
+// Telegram: the server says whether the bot is configured; the buttons appear only then.
+(async () => {
+  const { telegram } = await (await fetch("/api/demo/config")).json();
+  if (!telegram) return;
+  const connect = document.querySelector("#telegram");
+  const disconnect = document.querySelector("#telegram-off");
+  connect.hidden = false;
+  disconnect.hidden = false;
+
+  const refreshChats = async () => {
+    const { chats } = await (await withUser("/api/notifications/telegram/chats")).json();
+    connect.textContent = chats.length ? `Telegram linked (${chats.length})` : "Connect Telegram";
+  };
+  await refreshChats();
+  setInterval(refreshChats, 3000);
+
+  connect.addEventListener("click", async () => {
+    const { url } = await (
+      await withUser("/api/notifications/telegram/link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      })
+    ).json();
+    log(`telegram link -> ${url}`);
+    window.open(url, "_blank", "noopener");
+  });
+
+  disconnect.addEventListener("click", async () => {
+    const { removed } = await (
+      await withUser("/api/notifications/telegram/unlink", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
+    ).json();
+    log(removed ? `telegram unlinked ${removed} chat(s)` : "no telegram chat was linked");
+    await refreshChats();
+  });
+})();
+
 document.querySelector("#seen").addEventListener("click", async () => {
   await client.markSeen();
   log("badge cleared");

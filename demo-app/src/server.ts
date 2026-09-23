@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join } from "node:path";
-import { defineNotification, easyPing } from "easy-ping";
+import { defineNotification, easyPing, escapeHtml } from "easy-ping";
 import { toNodeHandler } from "easy-ping/node";
 import { preferences } from "easy-ping/plugins/preferences";
 import { push } from "easy-ping/plugins/push";
+import { telegram } from "easy-ping/plugins/telegram";
+import { telegramBot } from "easy-ping/providers/telegram";
 import { webPush } from "easy-ping/providers/web-push";
 import { connect, DRIVERS, type Driver } from "./database.ts";
 
@@ -43,9 +45,30 @@ const pushPlugin = push({
 
 const preferencesPlugin = preferences();
 
+// Optional: set both to try the Telegram channel. Without a public URL the demo
+// long-polls instead of registering a webhook.
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME;
+const telegramPlugin =
+  TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_USERNAME
+    ? telegram({
+        provider: telegramBot({ token: TELEGRAM_BOT_TOKEN }),
+        botUsername: TELEGRAM_BOT_USERNAME,
+        render: ({ type, payload }) => {
+          const data = payload as { title?: string; body?: string };
+          return {
+            text: `<b>${escapeHtml(data.title ?? type)}</b>\n${escapeHtml(data.body ?? "")}`,
+            // Telegram refuses localhost links in buttons; point at something public.
+            button: { text: "easy-ping docs", url: "https://easy-ping.teklumoges.dev" },
+          };
+        },
+      })
+    : null;
+
 const { adapter, label } = await connect(DB_DRIVER, [
   pushPlugin.schema ?? {},
   preferencesPlugin.schema ?? {},
+  telegramPlugin?.schema ?? {},
 ]);
 
 const notify = easyPing({
@@ -70,10 +93,20 @@ const notify = easyPing({
   delivery: { mode: "inline" },
 
   notifications: {
-    demoPing: defineNotification({ channels: ["inApp", "push"] }),
+    demoPing: defineNotification({
+      channels: telegramPlugin ? ["inApp", "push", "telegram"] : ["inApp", "push"],
+    }),
   },
 
-  plugins: [preferencesPlugin, pushPlugin],
+  plugins: telegramPlugin
+    ? [preferencesPlugin, pushPlugin, telegramPlugin]
+    : [preferencesPlugin, pushPlugin],
+});
+
+const telegramPoller = telegramPlugin?.poll();
+process.on("SIGINT", () => {
+  telegramPoller?.stop();
+  process.exit(0);
 });
 
 const notifyHandler = toNodeHandler(notify.handler.handle);
@@ -126,7 +159,9 @@ const server = createServer(async (req, res) => {
 
   if (url.pathname === "/api/demo/config") {
     res.writeHead(200, { "content-type": "application/json" });
-    return void res.end(JSON.stringify({ vapidPublicKey: VAPID_PUBLIC_KEY }));
+    return void res.end(
+      JSON.stringify({ vapidPublicKey: VAPID_PUBLIC_KEY, telegram: telegramPlugin !== null }),
+    );
   }
 
   // Served straight out of the workspace package so they track a rebuild.
@@ -163,5 +198,10 @@ const server = createServer(async (req, res) => {
 
 server.listen(3210, "127.0.0.1", () => {
   console.log("\n  easy-ping demo -> http://localhost:3210");
-  console.log(`  database: ${label}\n`);
+  console.log(`  database: ${label}`);
+  console.log(
+    telegramPlugin
+      ? `  telegram: @${TELEGRAM_BOT_USERNAME}, long-polling for /start\n`
+      : "  telegram: off (set TELEGRAM_BOT_TOKEN and TELEGRAM_BOT_USERNAME)\n",
+  );
 });

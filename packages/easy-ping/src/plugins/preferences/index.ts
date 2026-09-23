@@ -13,7 +13,7 @@ export const UNSUBSCRIBE_PURPOSE = "unsubscribe";
 
 const TABLE = "notification_preference";
 
-const CHANNELS: readonly Channel[] = ["inApp", "email", "push", "sms", "slack"];
+const CHANNELS: readonly Channel[] = ["inApp", "email", "push", "telegram", "sms", "slack"];
 const FREQUENCIES: readonly Frequency[] = ["instant", "daily", "weekly", "off"];
 
 const isChannel = (value: unknown): value is Channel => CHANNELS.includes(value as Channel);

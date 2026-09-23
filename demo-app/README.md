@@ -21,6 +21,11 @@ startup banner names whichever one it connected to.
 
 Then: **Enable push** → allow the permission prompt → type a message → **Send**.
 
+To try Telegram too, create a bot with @BotFather, put its token and username in `.env`
+(`TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`) and restart. A **Connect Telegram** button appears;
+it opens the bot with a one-time code, the bot replies "Connected", and from then on **Send**
+also lands in that chat. The demo long-polls the Bot API, so no public URL or webhook is needed.
+
 The message you typed arrives as a real OS notification, encrypted in transit
 and decrypted by the service worker in `public/sw.js`. Click into another
 window first — seeing it arrive while the tab is in the background is the whole
@@ -35,6 +40,7 @@ second person and confirm feeds stay separate.
 | --- | --- |
 | in-app inbox | one event stream per browser (open two tabs: leader / follower), unseen badge, seen vs read |
 | web push | VAPID, aes128gcm, a real service worker, a real push service |
+| telegram | one-tap linking through a deep link, long-polled updates, HTML messages with a button |
 | device registry | register, re-register, unregister, prune |
 | session scoping | `x-demo-user` stands in for your auth |
 | all four adapters | the same code on Postgres, MongoDB, MySQL and SQLite |
