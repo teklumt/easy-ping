@@ -16,6 +16,8 @@ const log = (message) => {
 const client = createNotifyClient({
   baseUrl: "/api/notifications",
   fetch: withUser,
+  // Identity here is a header, not a cookie: keep tabs acting as different users apart.
+  scope: userId,
 });
 
 // Your app's own calls carry the inbox version; the bell refreshes when it moves.

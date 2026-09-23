@@ -415,3 +415,36 @@ describe("no DOM", () => {
     expect(tab.state).toEqual(expected);
   });
 });
+
+describe("scope", () => {
+  it("keeps tabs signed in as different users apart: separate leaders, separate state", async () => {
+    const api = server();
+    const shared = locks();
+    const requested: string[] = [];
+    const recording = {
+      request: (
+        name: string,
+        options: { mode: "exclusive"; signal?: AbortSignal },
+        cb: () => Promise<void>,
+      ) => {
+        requested.push(name);
+        return shared.request(name, options, cb);
+      },
+    };
+    // Real Node BroadcastChannel, so the channel name carries the scope too.
+    const a = client(api, {
+      transport: "sse",
+      locks: recording,
+      channel: undefined,
+      scope: "alice",
+    });
+    const b = client(api, { transport: "sse", locks: recording, channel: undefined, scope: "bob" });
+    watch(a);
+    watch(b);
+
+    await waitUntil(() => a.getTransport().role === "leader" && b.getTransport().role === "leader");
+    expect(new Set(requested).size).toBe(2);
+    expect(requested.every((name) => name.includes("#alice") || name.includes("#bob"))).toBe(true);
+    await waitUntil(() => api.streams.length === 2);
+  });
+});

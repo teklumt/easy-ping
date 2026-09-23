@@ -77,6 +77,12 @@ export type NotifyClientOptions = {
   /** Where user activity is observed. Defaults to window; null disables. */
   activityTarget?: MessageTargetLike | null | undefined;
   now?: (() => number) | undefined;
+  /**
+   * Separates browsers' tab groups when identity is not a cookie: pass the
+   * current user's id (or session id) so tabs signed in as different users
+   * never share a leader or mirror each other's inbox.
+   */
+  scope?: string | undefined;
 };
 
 const INITIAL: NotifyState = {
@@ -110,6 +116,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   const safetyNetMs = options.safetyNetMs ?? 5 * 60_000;
   const activeWindowMs = options.activeWindowMs ?? 60_000;
   const now = options.now ?? (() => Date.now());
+  const groupKey = options.scope ? `${baseUrl}#${options.scope}` : baseUrl;
   const hasDom = typeof window !== "undefined" && typeof document !== "undefined";
   const transport: Transport = options.transport ?? "auto";
   const wantsStream = transport === "sse" || (transport === "auto" && hasDom);
@@ -126,7 +133,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   const makeChannel =
     options.channel === undefined
       ? typeof BroadcastChannel !== "undefined"
-        ? () => new BroadcastChannel(`easy-ping:${baseUrl}`) as unknown as ChannelLike
+        ? () => new BroadcastChannel(`easy-ping:${groupKey}`) as unknown as ChannelLike
         : null
       : options.channel;
   const serviceWorker =
@@ -527,7 +534,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
     lockAbort = new AbortController();
     locks
       .request(
-        `easy-ping:leader:${baseUrl}`,
+        `easy-ping:leader:${groupKey}`,
         { mode: "exclusive", signal: lockAbort.signal },
         () =>
           new Promise<void>((resolve) => {
@@ -588,6 +595,16 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
 
   let lastInboxVersion: string | null = null;
 
+  // Only the app's own origin may steer the bell; a third-party response cannot.
+  const sameOrigin = (response: Response) => {
+    if (!response.url || typeof location === "undefined") return true;
+    try {
+      return new URL(response.url).origin === location.origin;
+    } catch {
+      return false;
+    }
+  };
+
   /**
    * Wraps your app's fetch so responses carrying the inbox-version header
    * refresh the bell when the version moves. Active users then never need a
@@ -596,7 +613,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
   function instrument(inner: typeof globalThis.fetch): typeof globalThis.fetch {
     return (async (...args: Parameters<typeof globalThis.fetch>) => {
       const response = await inner(...args);
-      const version = response.headers.get("x-easy-ping-inbox");
+      const version = sameOrigin(response) ? response.headers.get("x-easy-ping-inbox") : null;
       if (version !== null && version !== lastInboxVersion) {
         const first = lastInboxVersion === null;
         lastInboxVersion = version;

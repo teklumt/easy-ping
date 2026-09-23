@@ -229,6 +229,8 @@ export function easyPing<TDefs extends NotificationDefinitions>(
           heartbeatMs: config.events?.heartbeatMs ?? 25_000,
           probeIntervalMs: config.events?.probeIntervalMs ?? 30_000,
           maxDurationMs: config.events?.maxDurationMs ?? 0,
+          maxStreamsPerUser: config.events?.maxStreamsPerUser ?? 10,
+          maxStreams: config.events?.maxStreams ?? 5_000,
         };
 
   const sweepConfig = config.delivery?.sweepOnRequest;

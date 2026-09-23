@@ -39,6 +39,10 @@ export type EventsConfig = {
    * for changes this often on its subscriber's behalf. Default 30 s; 0 disables.
    */
   probeIntervalMs?: number;
+  /** Concurrent streams one user may hold in this process before a 429. Default 10. */
+  maxStreamsPerUser?: number;
+  /** Concurrent streams this process holds in total before a 503. Default 5000. */
+  maxStreams?: number;
   /** Close the stream after this long; the client reconnects. 0 (default) leaves it open. */
   maxDurationMs?: number;
 };

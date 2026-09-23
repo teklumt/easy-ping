@@ -10,7 +10,12 @@ export type EventsSettings = {
   heartbeatMs: number;
   probeIntervalMs: number;
   maxDurationMs: number;
+  maxStreamsPerUser: number;
+  maxStreams: number;
 };
+
+/** Unread chunks a stream may hold before it is closed on a consumer that stopped reading. */
+const STREAM_HIGH_WATER_MARK = 256;
 
 export type HandlerDeps = {
   adapter: DatabaseAdapter;
@@ -50,10 +55,10 @@ const PRIVATE_HEADERS: Record<string, string> = {
   "x-content-type-options": "nosniff",
 };
 
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", ...PRIVATE_HEADERS },
+    headers: { "content-type": "application/json", ...PRIVATE_HEADERS, ...headers },
   });
 
 const empty = (status: number) => new Response(null, { status, headers: PRIVATE_HEADERS });
@@ -283,7 +288,15 @@ export function createHandler(deps: HandlerDeps) {
     if (userId === null) return empty(401);
 
     if (request.method === "GET" && path === "/events") {
-      return deps.events ? events(request, userId, deps.events) : empty(404);
+      if (!deps.events) return empty(404);
+      // A session can open streams for free; without a cap one account can hold every socket.
+      if ((openStreams.get(userId) ?? 0) >= deps.events.maxStreamsPerUser) {
+        return json({ error: "too many open event streams" }, 429, { "retry-after": "30" });
+      }
+      if (totalStreams >= deps.events.maxStreams) {
+        return json({ error: "event streams unavailable" }, 503, { "retry-after": "30" });
+      }
+      return events(request, userId, deps.events);
     }
 
     if (request.method === "GET" && path === "/") {
@@ -350,6 +363,20 @@ export function createHandler(deps: HandlerDeps) {
     return empty(404);
   }
 
+  const openStreams = new Map<string, number>();
+  let totalStreams = 0;
+
+  const trackStream = (userId: string) => {
+    openStreams.set(userId, (openStreams.get(userId) ?? 0) + 1);
+    totalStreams += 1;
+    return () => {
+      const remaining = (openStreams.get(userId) ?? 1) - 1;
+      if (remaining > 0) openStreams.set(userId, remaining);
+      else openStreams.delete(userId);
+      totalStreams -= 1;
+    };
+  };
+
   /** A change fingerprint cheap enough to take every probe interval. */
   async function fingerprint(userId: string): Promise<string> {
     const [page, unseen] = await Promise.all([
@@ -360,6 +387,46 @@ export function createHandler(deps: HandlerDeps) {
     return `${newest?.id ?? ""}|${newest?.readAt ? 1 : 0}|${unseen}`;
   }
 
+  // One probe per user, however many streams that user holds: N tabs must not mean N queries.
+  type Probe = { listeners: Set<() => void>; timer: ReturnType<typeof setInterval>; last?: string };
+  const probes = new Map<string, Probe>();
+
+  function subscribeProbe(userId: string, onChanged: () => void, intervalMs: number) {
+    let probe = probes.get(userId);
+    if (!probe) {
+      const created: Probe = {
+        listeners: new Set(),
+        timer: setInterval(() => {
+          fingerprint(userId)
+            .then((value) => {
+              if (created.last !== undefined && value !== created.last) {
+                for (const listener of created.listeners) listener();
+              }
+              created.last = value;
+            })
+            .catch((error) => deps.logger.error("events probe failed", { error }));
+        }, intervalMs),
+      };
+      probe = created;
+      probes.set(userId, created);
+      fingerprint(userId)
+        .then((value) => {
+          if (created.last === undefined) created.last = value;
+        })
+        .catch(() => {});
+    }
+    probe.listeners.add(onChanged);
+    return () => {
+      const current = probes.get(userId);
+      if (!current) return;
+      current.listeners.delete(onChanged);
+      if (current.listeners.size === 0) {
+        clearInterval(current.timer);
+        probes.delete(userId);
+      }
+    };
+  }
+
   /**
    * Server-Sent Events: `ready` once, `changed` whenever this user's inbox
    * moves, comments as keepalive. No payload ever travels on the stream; the
@@ -368,67 +435,61 @@ export function createHandler(deps: HandlerDeps) {
   function events(request: Request, userId: string, settings: EventsSettings): Response {
     const encoder = new TextEncoder();
     const timers: ReturnType<typeof setInterval>[] = [];
-    let unsubscribe: (() => void) | undefined;
+    const unsubscribes: (() => void)[] = [];
     let closed = false;
     let cleanup = () => {};
 
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const write = (text: string) => {
-          if (closed) return;
-          try {
-            controller.enqueue(encoder.encode(text));
-          } catch {
-            cleanup();
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          const write = (text: string) => {
+            if (closed) return;
+            // A consumer that stopped reading would make this queue grow without bound.
+            if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+              cleanup();
+              return;
+            }
+            try {
+              controller.enqueue(encoder.encode(text));
+            } catch {
+              cleanup();
+            }
+          };
+          cleanup = () => {
+            if (closed) return;
+            closed = true;
+            for (const unsubscribe of unsubscribes) unsubscribe();
+            for (const timer of timers) clearInterval(timer);
+            try {
+              controller.close();
+            } catch {
+              // already closed by the consumer
+            }
+          };
+          const changed = () => write("event: changed\ndata: {}\n\n");
+
+          unsubscribes.push(trackStream(userId));
+          write("retry: 3000\n\nevent: ready\ndata: {}\n\n");
+          unsubscribes.push(deps.signals.subscribe(inboxChannel(userId), changed));
+          timers.push(setInterval(() => write(": keepalive\n\n"), settings.heartbeatMs));
+
+          if (!deps.signals.crossProcess && settings.probeIntervalMs > 0) {
+            unsubscribes.push(subscribeProbe(userId, changed, settings.probeIntervalMs));
           }
-        };
-        cleanup = () => {
-          if (closed) return;
-          closed = true;
-          unsubscribe?.();
-          for (const timer of timers) clearInterval(timer);
-          try {
-            controller.close();
-          } catch {
-            // already closed by the consumer
+
+          if (settings.maxDurationMs > 0) {
+            timers.push(
+              setTimeout(cleanup, settings.maxDurationMs) as ReturnType<typeof setInterval>,
+            );
           }
-        };
-        const changed = () => write("event: changed\ndata: {}\n\n");
-
-        write("retry: 3000\n\nevent: ready\ndata: {}\n\n");
-        unsubscribe = deps.signals.subscribe(inboxChannel(userId), changed);
-        timers.push(setInterval(() => write(": keepalive\n\n"), settings.heartbeatMs));
-
-        if (!deps.signals.crossProcess && settings.probeIntervalMs > 0) {
-          let last: string | undefined;
-          fingerprint(userId)
-            .then((value) => {
-              last = value;
-            })
-            .catch(() => {});
-          timers.push(
-            setInterval(() => {
-              fingerprint(userId)
-                .then((value) => {
-                  if (last !== undefined && value !== last) changed();
-                  last = value;
-                })
-                .catch((error) => deps.logger.error("events probe failed", { error }));
-            }, settings.probeIntervalMs),
-          );
-        }
-
-        if (settings.maxDurationMs > 0) {
-          timers.push(
-            setTimeout(cleanup, settings.maxDurationMs) as ReturnType<typeof setInterval>,
-          );
-        }
-        request.signal?.addEventListener("abort", cleanup, { once: true });
+          request.signal?.addEventListener("abort", cleanup, { once: true });
+        },
+        cancel() {
+          cleanup();
+        },
       },
-      cancel() {
-        cleanup();
-      },
-    });
+      { highWaterMark: STREAM_HIGH_WATER_MARK },
+    );
 
     return new Response(stream, {
       headers: {
@@ -442,14 +503,17 @@ export function createHandler(deps: HandlerDeps) {
   }
 
   async function handle(request: Request): Promise<Response> {
+    let response: Response | undefined;
     try {
-      return await route(request);
+      response = await route(request);
+      return response;
     } catch (error) {
       // A thrown driver error must not escape: unhandled rejection on Node, stack trace elsewhere.
       deps.logger.error("request failed", { url: request.url, error });
       return empty(500);
     } finally {
-      deps.sweepOnRequest?.();
+      // Only a served request earns a sweep; anonymous 401s must not drive database work.
+      if (response && response.status < 400) deps.sweepOnRequest?.();
     }
   }
 
