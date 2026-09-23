@@ -16,6 +16,7 @@ export type {
   DeliveryConfig,
   EasyPing,
   EasyPingConfig,
+  EventsConfig,
   HealthReport,
   MountedRoute,
   SendArgs,
@@ -23,6 +24,7 @@ export type {
   SessionConfig,
   Worker,
 } from "./core/config";
+export { INBOX_VERSION_HEADER } from "./core/config";
 export type {
   AnyNotificationDefinition,
   EmailTemplate,
@@ -68,6 +70,13 @@ export type { RateLimitConfig } from "./core/rate-limit";
 export { createRateLimiter } from "./core/rate-limit";
 export type { Runner, RunnerDeps, SweepResult } from "./core/runner";
 export { createRunner, redactErrorMessage } from "./core/runner";
+export type { Signals } from "./core/signals";
+export {
+  createBridgedSignals,
+  createMemorySignals,
+  DELIVERIES_CHANNEL,
+  inboxChannel,
+} from "./core/signals";
 export type { SignRequest, TokenClaims } from "./core/tokens";
 export {
   DEFAULT_TOKEN_TTL_SECONDS,

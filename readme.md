@@ -58,8 +58,9 @@ Every "no queue required" decision below follows from that.
 > **Status: published, pre-1.0.** The core pipeline, all three adapters, the React client and the
 > preferences, digests and push plugins are covered by tests against real databases. Web push is
 > verified end to end against Mozilla's production push service and cross-checked against
-> `http_ece`. Realtime and batching are not built, and the Resend provider has only been exercised
-> against a stub. Minor versions may still move APIs before 1.0.
+> `http_ece`. The bell updates over a server-sent event stream with polling as the fallback;
+> batching is not built, and the Resend provider has only been exercised against a stub. Minor
+> versions may still move APIs before 1.0.
 
 ---
 
@@ -294,6 +295,26 @@ export function Bell() {
 }
 ```
 
+The hook is headless and keeps itself fresh without a socket server: one tab per browser holds a
+`GET /events` stream and the others mirror it over `BroadcastChannel`, so ten open tabs cost one
+connection and zero idle queries. `send()`, `/read` and `/seen` push a `changed` event, the tab
+refreshes, and where a stream cannot live (a serverless host that cuts it, a hardened proxy) the
+client notices and falls back to polling that slows down while the user is idle. Nothing to
+configure; `transport: "poll"` switches the stream off if you want the old behaviour.
+
+Two optional extras when you want the bell fresh with no dedicated request at all:
+
+```ts
+// Piggyback: any response from your own API can carry the inbox version.
+return Response.json(data, { headers: notify.inboxHeaders(userId) });
+// ...and the client refreshes only when that number moves.
+const fetchWithBell = client.instrument(fetch);
+
+// Push relay: if you already run the push plugin, the service worker wakes the bell too.
+import { handlePush } from "easy-ping/sw";
+self.addEventListener("push", (event) => handlePush(event));
+```
+
 ### 7. Wire the cron
 
 ```
@@ -317,15 +338,33 @@ Delivery then happens according to `delivery.mode`:
 | --- | --- | --- | --- |
 | `inline` | before `send()` resolves | in-request | recommended |
 | `deferred` | after the response, via `waitUntil` | ~1s | **yes** |
-| `worker` | in-process poller | ~1s | optional |
+| `worker` | in-process loop, woken by `send()` | ~instant in-process, ≤10s across replicas | optional |
 | `cron` | when the sweep runs | up to the interval | **yes** |
 
 Modes are **additive**. `deferred` and `worker` are latency optimisations layered over the cron sweep — the rows are already committed, so a missing platform primitive or a crashed process costs latency, never a notification.
 
 ```ts
-const worker = notify.startWorker({ intervalMs: 1000 });
+const worker = notify.startWorker(); // idles 10s between sweeps; a send() in this process wakes it at once
 process.on("SIGTERM", () => worker.stop()); // drains in-flight work, releases leases
 ```
+
+On `cron` and `deferred` hosts that see traffic but no scheduler for minutes at a time,
+`delivery.sweepOnRequest: true` runs a small bounded sweep after any request, at most every 5 s,
+so a free-tier deployment delivers within seconds of the next page load instead of the next cron.
+
+**Across replicas**, wake-ups travel through `signals`: a publish says "something changed, go
+look" and carries no payload, so losing one costs latency, never a notification.
+
+```ts
+import { postgresSignals } from "easy-ping/adapters/postgres"; // LISTEN/NOTIFY, one channel
+import { mongoSignals } from "easy-ping/adapters/mongodb";     // change stream on a capped collection
+
+easyPing({ ..., signals: postgresSignals(sql) });
+```
+
+Without one, each process uses in-memory signals and the event stream falls back to a cheap
+fingerprint probe every 30 s (`events.probeIntervalMs`), which is exactly right on SQLite or a
+single replica.
 
 **Delivery is at-least-once.** Providers receive an idempotency key derived from the delivery id. Retries use exponential backoff with jitter (30s → 2m → 8m → 32m, five attempts), floored by your cron interval. Non-retryable failures — a revoked API key, an invalid recipient — fail immediately rather than burning all five attempts.
 
@@ -412,7 +451,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 - **Email templates are sent as-is.** Run every payload field a user could have typed through `escapeHtml`, or use a templating library that escapes by default. The quickstart shows the pattern.
 - **In-app payloads are served to the browser verbatim.** Never put anything in `payload` the recipient shouldn't read, and never render it with `innerHTML`.
 - **Request bodies are capped at 64 KiB** (`maxBodyBytes`), responses carry `Cache-Control: private, no-store`, and a thrown adapter error is a logged 500 rather than a stack trace or a crashed process.
-- **Rate limiting.** `rateLimit: { max, windowMs }` is an in-process fixed-window limiter keyed by the client address from `cf-connecting-ip` / `x-real-ip` / `x-forwarded-for` (or your own `key`), applied to every route including `/cron` and `/unsubscribe`. It is per process, not global: enough to blunt secret guessing and poll storms, not a quota. `onRequest` runs before it if you have a shared limiter of your own. The inbox is polled by every open tab, so size limits with that in mind.
+- **Rate limiting.** `rateLimit: { max, windowMs }` is an in-process fixed-window limiter keyed by the client address from `cf-connecting-ip` / `x-real-ip` / `x-forwarded-for` (or your own `key`), applied to every route including `/cron` and `/unsubscribe`. It is per process, not global: enough to blunt secret guessing and refresh storms, not a quota. `onRequest` runs before it if you have a shared limiter of your own. Each browser holds one `GET /events` stream and refreshes the feed on every `changed`, so size limits with that in mind.
 - **Unsubscribe tokens** travel in the URL, so they will appear in access logs. They are valid for 30 days by default, capped at 90. A token is refused if the user changed that preference after it was issued, so an old link cannot undo a newer decision; clicking the same link twice is still a 200. `last_error` stores provider messages with email addresses redacted.
 
 ---
@@ -430,7 +469,8 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ Delivery runner, all four modes, retry + backoff | |
 | ✅ Resend provider | |
 | ✅ Route handler, session scoping, cron | |
-| ✅ React client, polling, optimistic updates | |
+| ✅ React client, optimistic updates, one event stream per browser with polling fallback | `GET /events`, `navigator.locks` leader, `BroadcastChannel` mirror |
+| ✅ wake-ups: worker woken by `send()`, LISTEN/NOTIFY and change-stream signals, request-driven sweep | `signals`, `delivery.sweepOnRequest` |
 | ✅ preferences plugin + headless `usePreferences` | the wedge |
 | ✅ digests plugin, timezone-aware | |
 | ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
@@ -438,7 +478,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ scoped plugin storage, so plugins own their tables | |
 | ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()`; MySQL and SQLite are bootstrap-only for now |
 | ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |
-| ⬜ realtime, batching | |
+| ⬜ batching | |
 | ⬜ Prisma adapter, Vue / Svelte bindings | Kysely already works through `postgresAdapter` |
 
 ---

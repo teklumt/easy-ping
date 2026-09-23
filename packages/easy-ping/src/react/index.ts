@@ -20,7 +20,16 @@ export type UseNotificationsResult = NotifyState & {
 export function useNotifications(
   options: NotifyClientOptions & { client?: NotifyClient } = {},
 ): UseNotificationsResult {
-  const { client: provided, baseUrl, limit, pollIntervalMs, maxPollIntervalMs } = options;
+  const {
+    client: provided,
+    baseUrl,
+    limit,
+    pollIntervalMs,
+    maxPollIntervalMs,
+    safetyNetMs,
+    activeWindowMs,
+    transport,
+  } = options;
 
   // Held in a ref so a new callback identity per render does not rebuild the client.
   const callbacksRef = useRef(options);
@@ -34,12 +43,24 @@ export function useNotifications(
         limit,
         pollIntervalMs,
         maxPollIntervalMs,
+        safetyNetMs,
+        activeWindowMs,
+        transport,
         fetch: (...args) => (callbacksRef.current.fetch ?? globalThis.fetch)(...args),
         isDocumentHidden: () =>
           callbacksRef.current.isDocumentHidden?.() ??
           (typeof document !== "undefined" && document.visibilityState === "hidden"),
       }),
-    [provided, baseUrl, limit, pollIntervalMs, maxPollIntervalMs],
+    [
+      provided,
+      baseUrl,
+      limit,
+      pollIntervalMs,
+      maxPollIntervalMs,
+      safetyNetMs,
+      activeWindowMs,
+      transport,
+    ],
   );
 
   const [state, setState] = useState<NotifyState>(() => client.getState());

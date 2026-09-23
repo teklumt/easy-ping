@@ -14,10 +14,12 @@ import { execSync } from "node:child_process";
  * loose ceiling on the whole program.
  */
 const GATES = [
+  // 9k after the event-driven transport (8.5k): the Signals seam, EventsConfig
+  // and the client's transport options are new surface, not plugin composition.
   {
     name: "core",
     project: "tsconfig.core.json",
-    ceiling: Number(process.env.TYPE_BUDGET_CORE ?? 8_000),
+    ceiling: Number(process.env.TYPE_BUDGET_CORE ?? 9_000),
   },
   // Raised from 32k when the plugin store landed (30.2k), and from 38k when
   // the security regression suite landed (40.3k; the test file alone is

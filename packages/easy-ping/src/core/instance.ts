@@ -1,11 +1,12 @@
 import type { Backoff } from "./backoff";
-import type {
-  EasyPing,
-  EasyPingConfig,
-  HealthReport,
-  MountedRoute,
-  SendArgs,
-  SendResult,
+import {
+  type EasyPing,
+  type EasyPingConfig,
+  type HealthReport,
+  INBOX_VERSION_HEADER,
+  type MountedRoute,
+  type SendArgs,
+  type SendResult,
 } from "./config";
 import type { NotificationDefinitions } from "./definition";
 import { ConfigError, consoleLogger } from "./errors";
@@ -14,6 +15,7 @@ import type { AnyPlugin } from "./plugin";
 import { createRateLimiter } from "./rate-limit";
 import { createRunner } from "./runner";
 import { isChannelUsable, runSend } from "./send";
+import { createMemorySignals, DELIVERIES_CHANNEL, inboxChannel, type Signals } from "./signals";
 import { createPluginStore } from "./store";
 import { createScopedSigner } from "./tokens";
 import type { DeliveryMode } from "./types";
@@ -24,6 +26,7 @@ const CORE_ROUTES: readonly MountedRoute[] = [
   { method: "POST", path: "/seen", scope: { type: "user" }, owner: "core" },
   { method: "POST", path: "/read", scope: { type: "user" }, owner: "core" },
   { method: "POST", path: "/read-all", scope: { type: "user" }, owner: "core" },
+  { method: "GET", path: "/events", scope: { type: "user" }, owner: "core" },
   { method: "POST", path: "/cron", scope: { type: "machine" }, owner: "core" },
 ];
 
@@ -185,6 +188,25 @@ export function easyPing<TDefs extends NotificationDefinitions>(
 
   for (const warning of warnings) logger.warn(warning);
 
+  const baseSignals = config.signals ?? createMemorySignals();
+
+  // Per-user inbox versions for the piggyback header. In-process counters, so
+  // another replica's number differs; the client treats any change as "look",
+  // which costs a spurious refresh, never a missed one.
+  const inboxVersions = new Map<string, number>();
+  const signals: Signals = {
+    crossProcess: baseSignals.crossProcess,
+    publish(channel) {
+      if (channel.startsWith("inbox:")) {
+        if (inboxVersions.size > 50_000) inboxVersions.clear();
+        const userId = channel.slice("inbox:".length);
+        inboxVersions.set(userId, (inboxVersions.get(userId) ?? 0) + 1);
+      }
+      baseSignals.publish(channel);
+    },
+    subscribe: (channel, handler) => baseSignals.subscribe(channel, handler),
+  };
+
   const runner = createRunner({
     adapter: config.database,
     definitions: config.notifications,
@@ -195,9 +217,35 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     leaseMs,
     batchSize: config.delivery?.batchSize ?? DEFAULTS.batchSize,
     backoff: (config.delivery?.backoff ?? "exponential") as Backoff,
+    signals,
   });
 
   const pluginRoutes = plugins.flatMap((plugin) => plugin.routes ?? []);
+
+  const events =
+    config.events === false
+      ? false
+      : {
+          heartbeatMs: config.events?.heartbeatMs ?? 25_000,
+          probeIntervalMs: config.events?.probeIntervalMs ?? 30_000,
+          maxDurationMs: config.events?.maxDurationMs ?? 0,
+        };
+
+  const sweepConfig = config.delivery?.sweepOnRequest;
+  let lastRequestSweep = 0;
+  const sweepOnRequest =
+    sweepConfig && mode !== "inline"
+      ? () => {
+          const settings = sweepConfig === true ? {} : sweepConfig;
+          const now = Date.now();
+          if (now - lastRequestSweep < (settings.everyMs ?? 5_000)) return;
+          lastRequestSweep = now;
+          const pass = runner
+            .runOnce({ limit: settings.limit ?? 5 })
+            .catch((error) => logger.error("request-driven sweep failed", { error }));
+          config.delivery?.waitUntil?.(pass);
+        }
+      : undefined;
 
   const handler = createHandler({
     adapter: config.database,
@@ -205,6 +253,9 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     runner,
     logger,
     secret: config.secret,
+    signals,
+    events,
+    sweepOnRequest,
     basePath: config.basePath ?? DEFAULTS.basePath,
     pluginRoutes,
     trustedOrigins: config.trustedOrigins,
@@ -244,6 +295,11 @@ export function easyPing<TDefs extends NotificationDefinitions>(
 
     // Rows are committed; everything below only affects latency. RFC 0001 §8.1.
     if (result.notifications.length > 0) {
+      for (const notification of result.notifications) {
+        signals.publish(inboxChannel(notification.userId));
+      }
+      signals.publish(DELIVERIES_CHANNEL);
+
       // Scoped to this send, or an inline send flushes the whole backlog.
       const ids = result.notifications.flatMap((notification) =>
         notification.deliveries.map((delivery) => delivery.id),
@@ -284,8 +340,16 @@ export function easyPing<TDefs extends NotificationDefinitions>(
 
     startWorker: (options) => runner.startWorker(options ?? {}),
 
+    inboxHeaders: (userId) => ({
+      [INBOX_VERSION_HEADER]: String(inboxVersions.get(userId) ?? 0),
+    }),
+
     listRoutes: () => [
-      ...CORE_ROUTES.filter((route) => route.path !== "/cron" || Boolean(config.cron?.secret)),
+      ...CORE_ROUTES.filter(
+        (route) =>
+          (route.path !== "/cron" || Boolean(config.cron?.secret)) &&
+          (route.path !== "/events" || events !== false),
+      ),
       ...plugins.flatMap((plugin) =>
         (plugin.routes ?? []).map((route) => ({
           method: route.method,

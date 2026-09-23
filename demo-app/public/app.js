@@ -15,11 +15,26 @@ const log = (message) => {
 
 const client = createNotifyClient({
   baseUrl: "/api/notifications",
-  pollIntervalMs: 3000,
   fetch: withUser,
 });
 
+// Your app's own calls carry the inbox version; the bell refreshes when it moves.
+const appFetch = client.instrument(withUser);
+
+let lastTransport = "";
+const showTransport = () => {
+  const t = client.getTransport();
+  const text = `${t.role} / ${t.transport}${t.connected ? " (connected)" : ""}`;
+  document.querySelector("#transport").textContent = text;
+  if (text !== lastTransport) {
+    lastTransport = text;
+    log(`transport -> ${text}`);
+  }
+};
+setInterval(showTransport, 250);
+
 client.subscribe((state) => {
+  showTransport();
   document.querySelector("#badge").textContent = state.unseenCount;
 
   // Built as nodes, never innerHTML: payload.body is whatever the sender typed.
@@ -66,7 +81,7 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   const message = field.value.trim();
 
   const result = await (
-    await withUser("/api/demo/send", {
+    await appFetch("/api/demo/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ message }),
@@ -77,7 +92,7 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   log(`sent "${message || "(default text)"}" -> ${channels.join(", ") || "nothing"}`);
 
   field.value = "";
-  await client.refresh();
+  // No manual refresh: the event stream (or the piggyback header) brings it in.
 });
 
 document.querySelector("#seen").addEventListener("click", async () => {

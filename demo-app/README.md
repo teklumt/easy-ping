@@ -33,7 +33,7 @@ second person and confirm feeds stay separate.
 
 | | |
 | --- | --- |
-| in-app inbox | polling client, unseen badge, seen vs read |
+| in-app inbox | one event stream per browser (open two tabs: leader / follower), unseen badge, seen vs read |
 | web push | VAPID, aes128gcm, a real service worker, a real push service |
 | device registry | register, re-register, unregister, prune |
 | session scoping | `x-demo-user` stands in for your auth |

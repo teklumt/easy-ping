@@ -18,6 +18,7 @@ export default defineConfig([
       index: "src/index.ts",
       client: "src/client/index.ts",
       browser: "src/browser/index.ts",
+      sw: "src/sw/index.ts",
       node: "src/node/index.ts",
       "adapters/drizzle": "src/adapters/drizzle/index.ts",
       "adapters/mongodb": "src/adapters/mongodb/index.ts",

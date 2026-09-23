@@ -3,7 +3,14 @@ import type { SessionConfig } from "./config";
 import type { Logger } from "./errors";
 import type { Promisable, RouteDefinition } from "./plugin";
 import type { Runner } from "./runner";
+import { inboxChannel, type Signals } from "./signals";
 import { verifyToken } from "./tokens";
+
+export type EventsSettings = {
+  heartbeatMs: number;
+  probeIntervalMs: number;
+  maxDurationMs: number;
+};
 
 export type HandlerDeps = {
   adapter: DatabaseAdapter;
@@ -12,6 +19,11 @@ export type HandlerDeps = {
   logger: Logger;
   basePath: string;
   secret: string;
+  signals: Signals;
+  /** `false` unmounts GET /events. */
+  events: EventsSettings | false;
+  /** Fire-and-forget delivery pass after a request. Rate-limited by the instance. */
+  sweepOnRequest?: (() => void) | undefined;
   cronSecret?: string | undefined;
   /** Guards plugin machine routes. The instance defaults it to cronSecret. */
   machineSecret?: string | undefined;
@@ -270,6 +282,10 @@ export function createHandler(deps: HandlerDeps) {
     if (userId === "error") return empty(500);
     if (userId === null) return empty(401);
 
+    if (request.method === "GET" && path === "/events") {
+      return deps.events ? events(request, userId, deps.events) : empty(404);
+    }
+
     if (request.method === "GET" && path === "/") {
       const limitParam = Number(url.searchParams.get("limit") ?? 20);
       const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 20;
@@ -303,6 +319,7 @@ export function createHandler(deps: HandlerDeps) {
         before && !Number.isNaN(before.getTime()) ? new Date(before.getTime() + 1) : new Date();
 
       await deps.adapter.markSeen(userId, cutoff);
+      deps.signals.publish(inboxChannel(userId));
       return json({ ok: true });
     }
 
@@ -320,14 +337,108 @@ export function createHandler(deps: HandlerDeps) {
 
       // 404, not 403: a 403 confirms the row exists. RFC 0002 §2.
       const updated = await deps.adapter.markRead(userId, ids);
+      if (updated > 0) deps.signals.publish(inboxChannel(userId));
       return updated === 0 ? empty(404) : json({ updated });
     }
 
     if (request.method === "POST" && path === "/read-all") {
-      return json({ updated: await deps.adapter.markAllRead(userId) });
+      const updated = await deps.adapter.markAllRead(userId);
+      if (updated > 0) deps.signals.publish(inboxChannel(userId));
+      return json({ updated });
     }
 
     return empty(404);
+  }
+
+  /** A change fingerprint cheap enough to take every probe interval. */
+  async function fingerprint(userId: string): Promise<string> {
+    const [page, unseen] = await Promise.all([
+      deps.adapter.listNotifications({ userId, limit: 1 }),
+      deps.adapter.countUnseen(userId),
+    ]);
+    const newest = page.notifications[0];
+    return `${newest?.id ?? ""}|${newest?.readAt ? 1 : 0}|${unseen}`;
+  }
+
+  /**
+   * Server-Sent Events: `ready` once, `changed` whenever this user's inbox
+   * moves, comments as keepalive. No payload ever travels on the stream; the
+   * client fetches the feed on `changed`. RFC 0006 §4D.
+   */
+  function events(request: Request, userId: string, settings: EventsSettings): Response {
+    const encoder = new TextEncoder();
+    const timers: ReturnType<typeof setInterval>[] = [];
+    let unsubscribe: (() => void) | undefined;
+    let closed = false;
+    let cleanup = () => {};
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const write = (text: string) => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            cleanup();
+          }
+        };
+        cleanup = () => {
+          if (closed) return;
+          closed = true;
+          unsubscribe?.();
+          for (const timer of timers) clearInterval(timer);
+          try {
+            controller.close();
+          } catch {
+            // already closed by the consumer
+          }
+        };
+        const changed = () => write("event: changed\ndata: {}\n\n");
+
+        write("retry: 3000\n\nevent: ready\ndata: {}\n\n");
+        unsubscribe = deps.signals.subscribe(inboxChannel(userId), changed);
+        timers.push(setInterval(() => write(": keepalive\n\n"), settings.heartbeatMs));
+
+        if (!deps.signals.crossProcess && settings.probeIntervalMs > 0) {
+          let last: string | undefined;
+          fingerprint(userId)
+            .then((value) => {
+              last = value;
+            })
+            .catch(() => {});
+          timers.push(
+            setInterval(() => {
+              fingerprint(userId)
+                .then((value) => {
+                  if (last !== undefined && value !== last) changed();
+                  last = value;
+                })
+                .catch((error) => deps.logger.error("events probe failed", { error }));
+            }, settings.probeIntervalMs),
+          );
+        }
+
+        if (settings.maxDurationMs > 0) {
+          timers.push(
+            setTimeout(cleanup, settings.maxDurationMs) as ReturnType<typeof setInterval>,
+          );
+        }
+        request.signal?.addEventListener("abort", cleanup, { once: true });
+      },
+      cancel() {
+        cleanup();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-store",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+        "x-content-type-options": "nosniff",
+      },
+    });
   }
 
   async function handle(request: Request): Promise<Response> {
@@ -337,6 +448,8 @@ export function createHandler(deps: HandlerDeps) {
       // A thrown driver error must not escape: unhandled rejection on Node, stack trace elsewhere.
       deps.logger.error("request failed", { url: request.url, error });
       return empty(500);
+    } finally {
+      deps.sweepOnRequest?.();
     }
   }
 

@@ -116,7 +116,11 @@ const server = createServer(async (req, res) => {
       },
     });
 
-    res.writeHead(200, { "content-type": "application/json" });
+    // The piggyback header: the client refreshes when this number moves.
+    res.writeHead(200, {
+      "content-type": "application/json",
+      ...notify.inboxHeaders(typeof userId === "string" ? userId : "demo-user"),
+    });
     return void res.end(JSON.stringify(result));
   }
 

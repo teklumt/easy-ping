@@ -38,7 +38,7 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer | unde
   });
 }
 
-export function toWebRequest(req: IncomingMessage, body?: Buffer): Request {
+export function toWebRequest(req: IncomingMessage, body?: Buffer, signal?: AbortSignal): Request {
   // Behind a load balancer this is the only signal that the site is https.
   const protocol = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
   const host = req.headers.host ?? "localhost";
@@ -54,6 +54,7 @@ export function toWebRequest(req: IncomingMessage, body?: Buffer): Request {
     method: req.method ?? "GET",
     headers,
     ...(body ? { body: new Uint8Array(body) } : {}),
+    ...(signal ? { signal } : {}),
   });
 }
 
@@ -65,8 +66,13 @@ export function toNodeHandler(
   const onError = options.onError ?? ((error: unknown) => console.error("[easy-ping]", error));
 
   return async (req, res) => {
+    // A client that goes away aborts the request, so an open event stream cleans up.
+    const disconnect = new AbortController();
+    res.on("close", () => disconnect.abort());
+
     try {
-      const response = await handler(toWebRequest(req, await readBody(req, maxBodyBytes)));
+      const body = await readBody(req, maxBodyBytes);
+      const response = await handler(toWebRequest(req, body, disconnect.signal));
 
       res.statusCode = response.status;
       // forEach: Headers is only iterable with "DOM.Iterable" in lib.
@@ -74,8 +80,26 @@ export function toNodeHandler(
         res.setHeader(key, value);
       });
 
-      const buffer = response.body ? Buffer.from(await response.arrayBuffer()) : null;
-      res.end(buffer ?? undefined);
+      if (!response.body) {
+        res.end();
+        return;
+      }
+
+      // Streamed, never buffered: GET /events stays open and every chunk must reach the client now.
+      res.flushHeaders();
+      const reader = response.body.getReader();
+      const cancel = () => reader.cancel().catch(() => {});
+      disconnect.signal.addEventListener("abort", cancel, { once: true });
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.write(value)) await new Promise((resolve) => res.once("drain", resolve));
+        }
+      } finally {
+        disconnect.signal.removeEventListener("abort", cancel);
+      }
+      res.end();
     } catch (error) {
       // Respond and swallow: a rethrow is an unhandled rejection under Express.
       if (!res.headersSent) res.statusCode = error instanceof BodyTooLargeError ? 413 : 500;

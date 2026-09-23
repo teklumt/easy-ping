@@ -4,6 +4,7 @@ import type { ChannelsConfig, Worker } from "./config";
 import type { NotificationDefinitions } from "./definition";
 import type { Logger } from "./errors";
 import type { AnyPlugin } from "./plugin";
+import { DELIVERIES_CHANNEL, type Signals } from "./signals";
 import type { Channel, Recipient } from "./types";
 
 export type RunnerDeps = {
@@ -16,7 +17,12 @@ export type RunnerDeps = {
   leaseMs: number;
   batchSize: number;
   backoff: Backoff;
+  /** Wakes an idle worker the moment a send commits, so the idle interval can be long. */
+  signals?: Signals | undefined;
 };
+
+/** Long on purpose: a send in this process wakes the loop, and the cron sweep backstops the rest. */
+export const DEFAULT_WORKER_IDLE_MS = 10_000;
 
 export type SweepResult = {
   claimed: number;
@@ -25,8 +31,6 @@ export type SweepResult = {
   /** Deliveries that had nothing to do. Not errors; see DeliveryOutcome. */
   skipped: number;
 };
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function withTimeout<T>(
   run: (signal: AbortSignal) => Promise<T>,
@@ -279,18 +283,43 @@ export function createRunner(deps: RunnerDeps) {
   }
 
   function startWorker(options: { intervalMs?: number; batchSize?: number } = {}): Worker {
-    const intervalMs = options.intervalMs ?? 1_000;
+    const intervalMs = options.intervalMs ?? DEFAULT_WORKER_IDLE_MS;
     let stopped = false;
+    let wake: (() => void) | undefined;
+    let pending = false;
+
+    const unsubscribe = deps.signals?.subscribe(DELIVERIES_CHANNEL, () => {
+      pending = true;
+      wake?.();
+    });
+
+    // Sleeps for the interval, or until a send publishes, whichever is first.
+    const idle = (ms: number) =>
+      new Promise<void>((resolve) => {
+        if (pending) {
+          pending = false;
+          resolve();
+          return;
+        }
+        const timer = setTimeout(done, ms);
+        function done() {
+          clearTimeout(timer);
+          wake = undefined;
+          pending = false;
+          resolve();
+        }
+        wake = done;
+      });
 
     const loop = (async () => {
       while (!stopped) {
         try {
           const result = await runOnce({ limit: options.batchSize ?? deps.batchSize });
           // Only idle when there was nothing to do; otherwise keep draining.
-          if (result.claimed === 0) await sleep(intervalMs);
+          if (result.claimed === 0 && !stopped) await idle(intervalMs);
         } catch (error) {
           deps.logger.error("worker sweep failed", { error });
-          await sleep(intervalMs);
+          if (!stopped) await idle(intervalMs);
         }
       }
     })();
@@ -298,6 +327,8 @@ export function createRunner(deps: RunnerDeps) {
     return {
       stop: async () => {
         stopped = true;
+        unsubscribe?.();
+        wake?.();
         // Let the in-flight sweep finish and release its leases.
         await loop;
       },
