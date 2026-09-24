@@ -1,6 +1,9 @@
 packages:
   - "packages/*"
   - "examples/*"
+  # Copy-paste starting point for an Expo app; installing React Native here would cost every
+  # contributor the native toolchain for a package that cannot even build outside Expo.
+  - "!examples/expo"
   - "demo-app"
 allowBuilds:
   esbuild: true

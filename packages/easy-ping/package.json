@@ -35,7 +35,11 @@
     "postgres",
     "mongodb",
     "react",
-    "nextjs"
+    "nextjs",
+    "react-native",
+    "expo",
+    "expo-notifications",
+    "mobile-push"
   ],
   "type": "module",
   "sideEffects": false,
@@ -101,6 +105,11 @@
       "import": "./dist/react.js",
       "require": "./dist/react.cjs"
     },
+    "./react-native": {
+      "types": "./dist/react-native.d.ts",
+      "import": "./dist/react-native.js",
+      "require": "./dist/react-native.cjs"
+    },
     "./plugins/preferences": {
       "types": "./dist/plugins/preferences.d.ts",
       "import": "./dist/plugins/preferences.js",
@@ -136,6 +145,11 @@
       "import": "./dist/plugins/telegram.js",
       "require": "./dist/plugins/telegram.cjs"
     },
+    "./plugins/mobile-push": {
+      "types": "./dist/plugins/mobile-push.d.ts",
+      "import": "./dist/plugins/mobile-push.js",
+      "require": "./dist/plugins/mobile-push.cjs"
+    },
     "./providers/web-push": {
       "types": "./dist/providers/web-push.d.ts",
       "import": "./dist/providers/web-push.js",
@@ -145,6 +159,11 @@
       "types": "./dist/providers/telegram.d.ts",
       "import": "./dist/providers/telegram.js",
       "require": "./dist/providers/telegram.cjs"
+    },
+    "./providers/expo-push": {
+      "types": "./dist/providers/expo-push.d.ts",
+      "import": "./dist/providers/expo-push.js",
+      "require": "./dist/providers/expo-push.cjs"
     },
     "./browser": {
       "types": "./dist/browser.d.ts",
@@ -159,13 +178,17 @@
   },
   "peerDependencies": {
     "drizzle-orm": ">=0.36.0",
-    "react": ">=18"
+    "react": ">=18",
+    "react-native": ">=0.72"
   },
   "peerDependenciesMeta": {
     "drizzle-orm": {
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "react-native": {
       "optional": true
     }
   },

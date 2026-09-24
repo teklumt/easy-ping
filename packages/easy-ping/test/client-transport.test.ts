@@ -261,6 +261,28 @@ describe("event stream", () => {
   });
 });
 
+describe("event stream without a streaming fetch", () => {
+  it("gives up after one attempt when the response has no body, instead of three retries", async () => {
+    vi.useFakeTimers();
+    const api = server();
+    const bodiless = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/events")) {
+        api.calls.push("GET /api/notifications/events");
+        return new Response(null, { status: 200 });
+      }
+      return api.fetch(url, init);
+    }) as unknown as typeof globalThis.fetch;
+    const c = client(api, { transport: "sse", pollIntervalMs: 1_000, fetch: bodiless });
+    watch(c);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(c.getTransport().transport).toBe("poll");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(api.calls.filter((call) => call.endsWith("/events"))).toHaveLength(1);
+    expect(api.pages()).toBeGreaterThan(1);
+  });
+});
+
 describe("one connection per browser", () => {
   it("elects a leader; followers mirror it and hand leadership on when it closes", async () => {
     const api = server();
