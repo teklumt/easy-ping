@@ -34,6 +34,8 @@ export default defineConfig([
       "plugins/push": "src/plugins/push/index.ts",
       "plugins/telegram": "src/plugins/telegram/index.ts",
       "providers/telegram": "src/providers/telegram/index.ts",
+      "plugins/mobile-push": "src/plugins/mobile-push/index.ts",
+      "providers/expo-push": "src/providers/expo-push/index.ts",
       "plugins/preferences-client": "src/plugins/preferences/client.ts",
     },
   },
@@ -50,6 +52,13 @@ export default defineConfig([
     // Rollup's treeshake pass strips module-level directives and the banner
     // with them, leaving the hook unusable in a Next.js server component tree.
     // Nothing to treeshake in a single hook anyway.
+    treeshake: false,
+  },
+  {
+    ...shared,
+    entry: { "react-native": "src/react-native/index.ts" },
+    // Both come from the app's own bundle; react-native is not even installable here.
+    external: ["react", "react-native"],
     treeshake: false,
   },
 ]);

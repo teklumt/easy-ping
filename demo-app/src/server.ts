@@ -3,9 +3,11 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { defineNotification, easyPing, escapeHtml } from "easy-ping";
 import { toNodeHandler } from "easy-ping/node";
+import { mobilePush } from "easy-ping/plugins/mobile-push";
 import { preferences } from "easy-ping/plugins/preferences";
 import { push } from "easy-ping/plugins/push";
 import { telegram } from "easy-ping/plugins/telegram";
+import { expoPush } from "easy-ping/providers/expo-push";
 import { telegramBot } from "easy-ping/providers/telegram";
 import { webPush } from "easy-ping/providers/web-push";
 import { connect, DRIVERS, type Driver } from "./database.ts";
@@ -65,10 +67,20 @@ const telegramPlugin =
       })
     : null;
 
+// Native push for the Expo test app. Expo's service needs no credentials in development.
+const mobilePushPlugin = mobilePush({
+  provider: expoPush({ accessToken: process.env.EXPO_ACCESS_TOKEN }),
+  render: ({ type, payload }) => {
+    const data = payload as { title?: string; body?: string };
+    return { title: data.title ?? type, body: data.body ?? "You have a new notification" };
+  },
+});
+
 const { adapter, label } = await connect(DB_DRIVER, [
   pushPlugin.schema ?? {},
   preferencesPlugin.schema ?? {},
   telegramPlugin?.schema ?? {},
+  mobilePushPlugin.schema ?? {},
 ]);
 
 const notify = easyPing({
@@ -94,13 +106,15 @@ const notify = easyPing({
 
   notifications: {
     demoPing: defineNotification({
-      channels: telegramPlugin ? ["inApp", "push", "telegram"] : ["inApp", "push"],
+      channels: telegramPlugin
+        ? ["inApp", "push", "mobilePush", "telegram"]
+        : ["inApp", "push", "mobilePush"],
     }),
   },
 
   plugins: telegramPlugin
-    ? [preferencesPlugin, pushPlugin, telegramPlugin]
-    : [preferencesPlugin, pushPlugin],
+    ? [preferencesPlugin, pushPlugin, mobilePushPlugin, telegramPlugin]
+    : [preferencesPlugin, pushPlugin, mobilePushPlugin],
 });
 
 const telegramPoller = telegramPlugin?.poll();
@@ -196,8 +210,13 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(3210, "127.0.0.1", () => {
-  console.log("\n  easy-ping demo -> http://localhost:3210");
+// HOST=0.0.0.0 exposes the demo on the LAN so a phone running the Expo test app can reach it.
+// Identity is still a header anyone can set; do this on a network you trust.
+const HOST = process.env.HOST ?? "127.0.0.1";
+server.listen(3210, HOST, () => {
+  console.log(
+    `\n  easy-ping demo -> http://${HOST === "0.0.0.0" ? "<your-lan-ip>" : "localhost"}:3210`,
+  );
   console.log(`  database: ${label}`);
   console.log(
     telegramPlugin

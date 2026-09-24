@@ -450,7 +450,13 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
       headers: { accept: "text/event-stream" },
       signal,
     });
-    if (!response.ok || !response.body) throw new Error(`GET /events failed: ${response.status}`);
+    if (!response.ok) throw new Error(`GET /events failed: ${response.status}`);
+    if (!response.body) {
+      // This fetch cannot stream a body (React Native's built-in one, some polyfills): poll instead.
+      streamDisabled = true;
+      schedule(nextDelay());
+      return;
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -495,7 +501,7 @@ export function createNotifyClient(options: NotifyClientOptions = {}) {
         if (!running) return;
         streamFailures += 1;
       }
-      if (!running || isFollower()) return;
+      if (!running || isFollower() || streamDisabled) return;
       if (shortStreams >= SHORT_STREAMS_BEFORE_GIVING_UP) {
         // The platform cuts streams too fast for them to be worth it here.
         streamDisabled = true;
