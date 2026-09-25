@@ -382,7 +382,7 @@ single replica.
 | `email` | ✅ Resend provider; the interface is open for others |
 | `push` | ✅ push plugin + `webPush()` — VAPID and aes128gcm on Web Crypto, so it runs on edge too |
 | `telegram` | ✅ telegram plugin + `telegramBot()` — one-tap linking through the bot, webhook or long-poll |
-| `mobilePush` | 🧪 **beta** — mobile-push plugin + `expoPush()`, iOS and Android through Expo's push service; under testing on real devices |
+| `mobilePush` | 🧪 **beta** — mobile-push plugin + `expoPush()`, iOS and Android through Expo's push service; in testing |
 | `sms` | ⬜ not implemented |
 | `slack` | ⬜ not implemented |
 
@@ -494,7 +494,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ push plugin + web-push provider | VAPID + RFC 8291, no node:crypto |
 | ✅ push verified against a live push service | Mozilla autopush, plus a cross-check against `http_ece` |
 | ✅ telegram plugin + bot provider | one-tap linking, webhook or long-poll, blocked chats pruned |
-| 🧪 mobile push plugin + Expo provider, React Native client entry (beta) | covered by tests, not yet proven on real devices at scale; APIs may change |
+| 🧪 mobile push plugin + Expo provider, React Native client entry (beta) | in testing; APIs may change before stable |
 | ✅ scoped plugin storage, so plugins own their tables | |
 | ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()`; MySQL and SQLite are bootstrap-only for now |
 | ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |
