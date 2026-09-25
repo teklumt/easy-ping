@@ -1,5 +1,11 @@
 # easy-ping
 
+## 0.8.1
+
+### Patch Changes
+
+- [#17](https://github.com/teklumt/easy-ping/pull/17) [`69e72cf`](https://github.com/teklumt/easy-ping/commit/69e72cf96451e3570f0e8a5f020de7dd2896e45b) Thanks [@teklumt](https://github.com/teklumt)! - Mark React Native support (`easy-ping/react-native`) and the `mobilePush` channel as **beta** in the readme: covered by tests, still under testing on real devices, APIs may change in a minor release. No code changes.
+
 ## 0.8.0
 
 ### Minor Changes
