@@ -311,8 +311,9 @@ return Response.json(data, { headers: notify.inboxHeaders(userId) });
 const fetchWithBell = client.instrument(fetch);
 
 // Push relay: if you already run the push plugin, the service worker wakes the bell too.
+// easy-ping/sw is an ES module: bundle sw.js (esbuild/Vite) before serving it.
 import { handlePush } from "easy-ping/sw";
-self.addEventListener("push", (event) => handlePush(event));
+self.addEventListener("push", (event) => event.waitUntil(handlePush(event)));
 ```
 
 **React Native (beta, under testing).** The same client ships as `easy-ping/react-native`: `useNotifications` wired to `AppState`, a live stream when you pass `fetch` from `expo/fetch`, polling otherwise, and `registerMobilePushDevice` for native push. `examples/expo` is a complete screen.
