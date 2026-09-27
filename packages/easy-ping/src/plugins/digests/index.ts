@@ -6,6 +6,7 @@ import type {
   ResolveChannelsContext,
 } from "../../core/plugin";
 import type { Frequency } from "../../core/types";
+import { coreSchema } from "../../schema/declaration";
 import { type DigestWindow, isDue, localMoment, periodKey } from "./schedule";
 
 const ENTRY = "notification_digest_entry";
@@ -108,18 +109,9 @@ export function digests(options: DigestsOptions = {}): EasyPingPlugin<"digests">
         primaryKey: ["userId", "window"],
       },
 
-      // Read-only here; owned by the preferences plugin.
-      notificationPreference: {
-        tableName: "notification_preference",
-        fields: {
-          userId: { type: "string", required: true },
-          type: { type: "string", required: true },
-          channel: { type: "string", required: true },
-          enabled: { type: "boolean", required: true },
-          frequency: { type: "string", required: true },
-        },
-        primaryKey: ["userId", "type", "channel"],
-      },
+      // Read-only here. The full core declaration, not a subset, so migration planners
+      // comparing it against the live table do not see updated_at as undeclared.
+      notificationPreference: coreSchema.notificationPreference,
     },
 
     hooks: {

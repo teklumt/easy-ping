@@ -30,7 +30,8 @@ const GATES = [
   // 46k after the MySQL and SQLite adapters plus their backends in the test
   // harness (42.0k, exactly at the old line). Surface area, not plugin types.
   // 50k after vitest 5 (45.9k) and the telegram plugin + provider with their tests (47.2k).
-  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 50_000) },
+  // 54k after mobile push, React Native and the MySQL/SQLite migration planners (49.5k, 99%).
+  { name: "full", project: "tsconfig.json", ceiling: Number(process.env.TYPE_BUDGET ?? 54_000) },
 ];
 
 let failed = false;

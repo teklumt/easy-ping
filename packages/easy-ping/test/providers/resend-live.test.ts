@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { escapeHtml } from "../../src/core/html";
+import { easyPing } from "../../src/core/instance";
 import { ResendError, resend } from "../../src/providers/resend";
+import { availableBackends } from "../helpers/backends";
 
 // Resend's real API: rejection paths need no credentials; delivery needs RESEND_API_KEY and RESEND_FROM.
 
@@ -73,4 +76,65 @@ describe.skipIf(!key || !from)("resend delivery with a real key", () => {
 
     expect(result.providerMessageId).toMatch(/.+/);
   }, 30_000);
+
+  it("honours the idempotency key: the same delivery sent twice is one email", async () => {
+    if (!key || !from) throw new Error("missing credentials — this suite should have been skipped");
+    const provider = resend({ apiKey: key, from });
+    const once = message({ to: process.env.RESEND_TO ?? "delivered@resend.dev" });
+
+    const first = await provider.send(once);
+    // A retry after a timeout re-sends with the same key; Resend must answer with the same email.
+    const second = await provider.send(once);
+
+    expect(second.providerMessageId).toBe(first.providerMessageId);
+  }, 30_000);
+
+  it("delivers end to end: send() -> cron sweep -> delivery marked sent", async () => {
+    if (!key || !from) throw new Error("missing credentials — this suite should have been skipped");
+    const sqlite = availableBackends.find((backend) => backend.name === "sqlite");
+    if (!sqlite) throw new Error("sqlite backend missing");
+    const db = await sqlite.create("resend-live");
+    const to = process.env.RESEND_TO ?? "delivered@resend.dev";
+    const cronSecret = "cron-secret-0123456789";
+
+    try {
+      const notify = easyPing({
+        database: db.adapter,
+        secret: "test-signing-secret-0123456789",
+        cron: { secret: cronSecret },
+        session: { getUserId: async () => "u1" },
+        getRecipients: async (ids) =>
+          ids.map((userId) => ({ userId, email: to, timezone: "UTC", locale: "en" })),
+        notifications: {
+          liveCheck: {
+            channels: ["inApp", "email"],
+            email: {
+              subject: () => "easy-ping end-to-end live check",
+              template: (p) =>
+                `<p>Sent through the full pipeline for ${escapeHtml((p as { who: string }).who)}.</p>`,
+            },
+          },
+        },
+        channels: { inApp: { enabled: true }, email: { provider: resend({ apiKey: key, from }) } },
+        delivery: { mode: "cron" },
+        logger: { warn: () => {}, error: () => {} },
+      });
+
+      await notify.send("liveCheck", { to: "u1", payload: { who: "<the live suite>" } });
+      const sweep = await notify.handler.POST(
+        new Request("https://app.dev/api/notifications/cron", {
+          method: "POST",
+          headers: { authorization: `Bearer ${cronSecret}` },
+        }),
+      );
+      expect(sweep.status).toBe(200);
+
+      const deliveries = await db.rows("notification_delivery");
+      const email = deliveries.find((row) => row.channel === "email");
+      expect(email).toMatchObject({ status: "sent" });
+      expect(email?.last_error ?? null).toBeNull();
+    } finally {
+      await db.end();
+    }
+  }, 60_000);
 });
