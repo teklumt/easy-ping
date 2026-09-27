@@ -55,12 +55,13 @@ of the others — they are good tools solving a bigger problem.
 **Scale target:** thousands to low-millions of notifications per month. Not Slack-scale fan-out.
 Every "no queue required" decision below follows from that.
 
-> **Status: published, pre-1.0.** The core pipeline, all three adapters, the React client and the
+> **Status: published, pre-1.0.** The core pipeline, all five adapters, the React client and the
 > preferences, digests, push and telegram plugins are covered by tests against real databases. Web push is
 > verified end to end against Mozilla's production push service and cross-checked against
-> `http_ece`. The bell updates over a server-sent event stream with polling as the fallback;
-> batching is not built, and the Resend provider has only been exercised against a stub. Minor
-> versions may still move APIs before 1.0.
+> `http_ece`; email is verified against Resend's live API, including idempotent retries and a full
+> send-to-delivered pass. The bell updates over a server-sent event stream with polling as the
+> fallback; batching is not built yet. Minor
+> versions may still move APIs before 1.0; [what is stable and how changes are announced](https://easy-ping.teklumoges.dev/docs/stability).
 
 ---
 
@@ -311,8 +312,9 @@ return Response.json(data, { headers: notify.inboxHeaders(userId) });
 const fetchWithBell = client.instrument(fetch);
 
 // Push relay: if you already run the push plugin, the service worker wakes the bell too.
+// easy-ping/sw is an ES module: bundle sw.js (esbuild/Vite) before serving it.
 import { handlePush } from "easy-ping/sw";
-self.addEventListener("push", (event) => handlePush(event));
+self.addEventListener("push", (event) => event.waitUntil(handlePush(event)));
 ```
 
 **React Native (beta, under testing).** The same client ships as `easy-ping/react-native`: `useNotifications` wired to `AppState`, a live stream when you pass `fetch` from `expo/fetch`, polling otherwise, and `registerMobilePushDevice` for native push. `examples/expo` is a complete screen.
@@ -412,6 +414,8 @@ A later version may add a column. How you pick it up depends on how you created 
 | --- | --- |
 | `createSchema()` + drizzle-kit | `drizzle-kit` diffs it for you — nothing to do here |
 | `renderPostgresDdl()` | `planPostgresMigration()` — see below |
+| `createMysqlTables()` | `planMysqlMigration(query, schema)` from `easy-ping/schema` |
+| `createSqliteTables()` | `planSqliteMigration(query, schema)` from `easy-ping/schema`, in a transaction |
 | `createMongoIndexes()` | rerun it; `createIndex` is idempotent and additive |
 
 **`renderPostgresDdl` cannot upgrade you.** It emits `CREATE TABLE IF NOT EXISTS`, which is correct exactly once and a silent no-op afterwards. Rerunning it on an existing database does nothing at all.
@@ -485,7 +489,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ MySQL 8 / MariaDB | `SKIP LOCKED` with a transaction, lock-free `UPDATE` without |
 | ✅ SQLite | `node:sqlite` or better-sqlite3; one writer, so the claim is one `UPDATE` |
 | ✅ Delivery runner, all four modes, retry + backoff | |
-| ✅ Resend provider | |
+| ✅ Resend provider | verified against the live API: delivery, idempotent retries, end-to-end pipeline |
 | ✅ Route handler, session scoping, cron | |
 | ✅ React client, optimistic updates, one event stream per browser with polling fallback | `GET /events`, `navigator.locks` leader, `BroadcastChannel` mirror |
 | ✅ wake-ups: worker woken by `send()`, LISTEN/NOTIFY and change-stream signals, request-driven sweep | `signals`, `delivery.sweepOnRequest` |
@@ -496,7 +500,7 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 | ✅ telegram plugin + bot provider | one-tap linking, webhook or long-poll, blocked chats pruned |
 | 🧪 mobile push plugin + Expo provider, React Native client entry (beta) | in testing; APIs may change before stable |
 | ✅ scoped plugin storage, so plugins own their tables | |
-| ✅ additive schema migrations for the raw-SQL path | `planPostgresMigration()`; MySQL and SQLite are bootstrap-only for now |
+| ✅ additive schema migrations on every SQL database | `planPostgresMigration()`, `planMysqlMigration()`, `planSqliteMigration()`; MongoDB reruns its index setup |
 | ✅ failed deliveries reachable from the instance | `notify.getFailedDeliveries()` |
 | ⬜ batching | |
 | ⬜ Prisma adapter, Vue / Svelte bindings | Kysely already works through `postgresAdapter` |
@@ -544,11 +548,13 @@ The push crypto is checked two ways. `web-push-reference.test.ts` decrypts our o
 EASY_PING_LIVE_PUSH=1 pnpm --filter easy-ping test web-push-live
 ```
 
-The Resend provider is checked against Resend's real API too: the rejection paths need no credentials — a bogus key coming back as a structured 401 rather than a 400 is what proves the request shape is right. The delivery leg needs your own key:
+The Resend provider is checked against Resend's real API too. The rejection paths need no credentials: a bogus key coming back as a structured 401 rather than a 400 is what proves the request shape is right. With a key, three more cases run: a real send returns a message id, the same delivery sent twice is one email (the idempotency key a retry relies on), and a notification goes all the way through `send()` and the cron sweep to a delivery marked `sent`:
 
 ```bash
-RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>"   pnpm --filter easy-ping test resend-live
+RESEND_API_KEY=re_... RESEND_FROM="Acme <hi@acme.dev>" RESEND_TO=you@acme.dev   pnpm --filter easy-ping test resend-live
 ```
+
+Without a verified domain, `RESEND_FROM="onboarding@resend.dev"` works but only delivers to your own Resend account's address.
 
 ## Releasing
 

@@ -39,15 +39,24 @@ const defaultClause = (spec: FieldDeclaration): string => {
   return ` DEFAULT ${spec.default}`;
 };
 
+/** One column's definition, as CREATE TABLE and ALTER TABLE ... ADD COLUMN both need it. */
+export function mysqlColumnDefinition(
+  field: string,
+  table: TableDeclaration,
+  spec: FieldDeclaration,
+): string {
+  const nullability = spec.required ? " NOT NULL" : "";
+  return `${quote(toSnakeCase(field))} ${columnType(field, table, spec)}${nullability}${defaultClause(spec)}`;
+}
+
 /** MySQL DDL, one CREATE TABLE IF NOT EXISTS per table with indexes inline (no CREATE INDEX IF NOT EXISTS). */
 export function renderMysqlDdl(schema: SchemaDeclaration, prefix = ""): string[] {
   const statements: string[] = [];
 
   for (const table of Object.values(schema)) {
-    const lines = Object.entries(table.fields).map(([field, spec]) => {
-      const nullability = spec.required ? " NOT NULL" : "";
-      return `  ${quote(toSnakeCase(field))} ${columnType(field, table, spec)}${nullability}${defaultClause(spec)}`;
-    });
+    const lines = Object.entries(table.fields).map(
+      ([field, spec]) => `  ${mysqlColumnDefinition(field, table, spec)}`,
+    );
 
     if (table.primaryKey?.length) {
       lines.push(

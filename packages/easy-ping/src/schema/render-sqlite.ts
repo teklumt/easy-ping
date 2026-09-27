@@ -1,7 +1,7 @@
 import type { FieldDeclaration, SchemaDeclaration } from "../core/plugin";
 import { toSnakeCase } from "./declaration";
 
-const SQL_TYPE: Record<FieldDeclaration["type"], string> = {
+export const SQLITE_TYPE: Record<FieldDeclaration["type"], string> = {
   string: "TEXT",
   number: "INTEGER",
   boolean: "INTEGER",
@@ -21,6 +21,12 @@ const defaultClause = (spec: FieldDeclaration): string => {
   return ` DEFAULT ${spec.default}`;
 };
 
+/** One column's definition, as CREATE TABLE and ALTER TABLE ... ADD COLUMN both need it. */
+export function sqliteColumnDefinition(field: string, spec: FieldDeclaration): string {
+  const nullability = spec.required ? " NOT NULL" : "";
+  return `${quote(toSnakeCase(field))} ${SQLITE_TYPE[spec.type]}${nullability}${defaultClause(spec)}`;
+}
+
 /** SchemaDeclaration to SQLite DDL. Every statement is `IF NOT EXISTS`. */
 export function renderSqliteDdl(schema: SchemaDeclaration, prefix = ""): string[] {
   const statements: string[] = [];
@@ -28,10 +34,9 @@ export function renderSqliteDdl(schema: SchemaDeclaration, prefix = ""): string[
   for (const table of Object.values(schema)) {
     const name = quote(prefix + table.tableName);
 
-    const columns = Object.entries(table.fields).map(([field, spec]) => {
-      const nullability = spec.required ? " NOT NULL" : "";
-      return `  ${quote(toSnakeCase(field))} ${SQL_TYPE[spec.type]}${nullability}${defaultClause(spec)}`;
-    });
+    const columns = Object.entries(table.fields).map(
+      ([field, spec]) => `  ${sqliteColumnDefinition(field, spec)}`,
+    );
 
     if (table.primaryKey?.length) {
       columns.push(
