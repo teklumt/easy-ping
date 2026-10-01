@@ -129,6 +129,25 @@ export function createPluginStore(
     return declaration;
   }
 
+  function writable(table: string): TableDeclaration {
+    const declaration = resolve(table);
+    if (declaration.readOnly) {
+      throw new ConfigError(
+        `plugin "${pluginId}" tried to write "${table}", which it declares readOnly.`,
+      );
+    }
+    return declaration;
+  }
+
+  function notEverything(table: string, where: WhereClause, action: string) {
+    if (Object.keys(where).length === 0) {
+      throw new ConfigError(
+        `plugin "${pluginId}" called ${action}("${table}", {}), which would touch every row. ` +
+          "Pass a condition.",
+      );
+    }
+  }
+
   function checkFields(table: TableDeclaration, fields: Iterable<string>, context: string) {
     for (const field of fields) {
       // hasOwn, not a lookup: `constructor` and `__proto__` are not columns.
@@ -207,7 +226,7 @@ export function createPluginStore(
     },
 
     async insert(table, rows) {
-      const declaration = resolve(table);
+      const declaration = writable(table);
       for (const row of rows) checkRow(declaration, row, "insert");
       return storage.insertRows(
         qualified(declaration),
@@ -216,7 +235,7 @@ export function createPluginStore(
     },
 
     async upsert(table, rows, options) {
-      const declaration = resolve(table);
+      const declaration = writable(table);
       for (const row of rows) checkRow(declaration, row, "upsert");
       checkFields(declaration, options.onConflict, "onConflict");
       return storage.insertRows(
@@ -227,15 +246,17 @@ export function createPluginStore(
     },
 
     async update(table, where, set) {
-      const declaration = resolve(table);
+      const declaration = writable(table);
       checkWhere(declaration, where);
+      notEverything(table, where, "update");
       checkRow(declaration, set, "update");
       return storage.updateRows(qualified(declaration), where, serialize(declaration, set));
     },
 
     async remove(table, where) {
-      const declaration = resolve(table);
+      const declaration = writable(table);
       checkWhere(declaration, where);
+      notEverything(table, where, "remove");
       return storage.deleteRows(qualified(declaration), where);
     },
   };

@@ -104,6 +104,7 @@ export type TableDeclaration = {
   fields: Record<string, FieldDeclaration>;
   primaryKey?: readonly string[];
   indexes?: readonly IndexDeclaration[];
+  readOnly?: boolean;
 };
 
 export type SchemaDeclaration = Record<string, TableDeclaration>;

@@ -57,7 +57,7 @@ type ExpoReceipt =
 
 /** Expo tokens look like ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx] or ExpoPushToken[...]. */
 export const isExpoPushToken = (token: string): boolean =>
-  /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,}\]$/.test(token);
+  /^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,64}\]$/.test(token);
 
 /** Expo's send endpoint takes at most this many messages per request. */
 export const EXPO_SEND_BATCH = 100;

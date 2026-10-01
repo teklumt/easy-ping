@@ -409,23 +409,29 @@ export function drizzleAdapter(
           )})`,
       );
 
-      const conflict =
+      const updated = (onConflict ?? []).length
+        ? columns.filter((column) => !onConflict?.includes(column))
+        : [];
+      const target =
         onConflict && onConflict.length > 0
           ? sql` ON CONFLICT (${sql.join(
               onConflict.map((field) => sql.identifier(toSnakeCase(field))),
               sql`, `,
-            )}) DO UPDATE SET ${sql.join(
-              columns
-                .filter((column) => !onConflict.includes(column))
-                .map(
-                  (column) =>
-                    sql`${sql.identifier(toSnakeCase(column))} = EXCLUDED.${sql.identifier(
-                      toSnakeCase(column),
-                    )}`,
-                ),
+            )})`
+          : undefined;
+      const conflict = !target
+        ? sql``
+        : updated.length === 0
+          ? sql`${target} DO NOTHING`
+          : sql`${target} DO UPDATE SET ${sql.join(
+              updated.map(
+                (column) =>
+                  sql`${sql.identifier(toSnakeCase(column))} = EXCLUDED.${sql.identifier(
+                    toSnakeCase(column),
+                  )}`,
+              ),
               sql`, `,
-            )}`
-          : sql``;
+            )}`;
 
       const inserted = await run(sql`
         INSERT INTO ${sql.identifier(table)} (${sql.join(

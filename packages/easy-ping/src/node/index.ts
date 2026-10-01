@@ -40,7 +40,11 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer | unde
 
 export function toWebRequest(req: IncomingMessage, body?: Buffer, signal?: AbortSignal): Request {
   // Behind a load balancer this is the only signal that the site is https.
-  const protocol = (req.headers["x-forwarded-proto"] as string | undefined) ?? "http";
+  const forwarded = String(req.headers["x-forwarded-proto"] ?? "")
+    .split(",")[0]
+    ?.trim()
+    .toLowerCase();
+  const protocol = forwarded === "https" || forwarded === "http" ? forwarded : "http";
   const host = req.headers.host ?? "localhost";
 
   const headers = new Headers();
@@ -94,7 +98,18 @@ export function toNodeHandler(
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (!res.write(value)) await new Promise((resolve) => res.once("drain", resolve));
+          if (!res.write(value)) {
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                res.off("drain", done);
+                disconnect.signal.removeEventListener("abort", done);
+                resolve();
+              };
+              res.once("drain", done);
+              disconnect.signal.addEventListener("abort", done, { once: true });
+            });
+            if (disconnect.signal.aborted) break;
+          }
         }
       } finally {
         disconnect.signal.removeEventListener("abort", cancel);

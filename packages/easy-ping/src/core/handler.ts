@@ -49,6 +49,8 @@ export const MAX_BODY_BYTES = 64 * 1024;
 
 const MAX_READ_IDS = 200;
 
+const SESSION_ERROR: unique symbol = Symbol("session-error");
+
 // Per-user data: no shared caching, no sniffing.
 const PRIVATE_HEADERS: Record<string, string> = {
   "cache-control": "private, no-store",
@@ -187,14 +189,29 @@ export function createHandler(deps: HandlerDeps) {
   const trustedOrigins = deps.trustedOrigins ?? [];
   const maxBodyBytes = deps.maxBodyBytes ?? MAX_BODY_BYTES;
 
-  async function resolveUserId(request: Request): Promise<string | null | "error"> {
+  let warnedBadUserId = false;
+
+  async function resolveUserId(request: Request): Promise<string | null | typeof SESSION_ERROR> {
+    let id: unknown;
     try {
-      return await deps.session.getUserId(request);
+      id = await deps.session.getUserId(request);
     } catch (error) {
       // A broken session lookup is a 500, never a 401. RFC 0002 §1.
       deps.logger.error("session.getUserId threw", { error });
-      return "error";
+      return SESSION_ERROR;
     }
+    if (id === null || id === undefined) return null;
+    if (typeof id !== "string" || id === "") {
+      if (!warnedBadUserId) {
+        warnedBadUserId = true;
+        deps.logger.warn(
+          `session.getUserId returned ${id === "" ? "an empty string" : typeof id}; treating the ` +
+            "request as unauthenticated. Return a non-empty string or null.",
+        );
+      }
+      return null;
+    }
+    return id;
   }
 
   async function bearerMatches(request: Request, secret: string | undefined): Promise<boolean> {
@@ -228,7 +245,7 @@ export function createHandler(deps: HandlerDeps) {
       }
 
       const userId = await resolveUserId(request);
-      if (userId === "error") return empty(500);
+      if (userId === SESSION_ERROR) return empty(500);
       if (userId === null) return empty(401);
       return harden(await route.handler({ request, userId, claims: null, params: {} }));
     }
@@ -284,7 +301,7 @@ export function createHandler(deps: HandlerDeps) {
     }
 
     const userId = await resolveUserId(request);
-    if (userId === "error") return empty(500);
+    if (userId === SESSION_ERROR) return empty(500);
     if (userId === null) return empty(401);
 
     if (request.method === "GET" && path === "/events") {
