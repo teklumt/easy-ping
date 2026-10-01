@@ -111,7 +111,7 @@ export function digests(options: DigestsOptions = {}): EasyPingPlugin<"digests">
 
       // Read-only here. The full core declaration, not a subset, so migration planners
       // comparing it against the live table do not see updated_at as undeclared.
-      notificationPreference: coreSchema.notificationPreference,
+      notificationPreference: { ...coreSchema.notificationPreference, readOnly: true },
     },
 
     hooks: {

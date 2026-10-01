@@ -437,8 +437,11 @@ export function postgresAdapter(
             return `${quoted} = EXCLUDED.${quoted}`;
           });
 
+        const target = onConflict.map((f) => quote(toSnakeCase(f))).join(", ");
         statement.raw(
-          ` ON CONFLICT (${onConflict.map((f) => quote(toSnakeCase(f))).join(", ")}) DO UPDATE SET ${assignments.join(", ")}`,
+          assignments.length === 0
+            ? ` ON CONFLICT (${target}) DO NOTHING`
+            : ` ON CONFLICT (${target}) DO UPDATE SET ${assignments.join(", ")}`,
         );
       }
 

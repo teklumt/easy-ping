@@ -65,6 +65,7 @@ export type MigrationPlan = {
   unsupported: readonly string[];
   /** Tables that do not exist yet — these get a full CREATE TABLE. */
   createdTables: readonly string[];
+  requiresTransaction?: boolean;
 };
 
 /** Reads the live column list; a function, so this module stays driver-agnostic. */

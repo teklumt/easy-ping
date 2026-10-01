@@ -84,7 +84,7 @@ export function postgresSignals(
 
 /** The slice of a node-postgres Client used for LISTEN. One dedicated, connected client. */
 export type PgListenClientLike = {
-  query(text: string): Promise<unknown>;
+  query(text: string, values?: readonly unknown[]): Promise<unknown>;
   on(
     event: "notification",
     handler: (message: { channel: string; payload?: string }) => void,
@@ -98,7 +98,6 @@ export type PgListenClientLike = {
 /** Adapts a dedicated node-postgres Client (not a Pool: LISTEN is per connection) to `ListenNotifyLike`. */
 export function pgListenNotify(client: PgListenClientLike): ListenNotifyLike {
   const quote = (name: string) => `"${name.replace(/"/g, '""')}"`;
-  const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
   return {
     async listen(channel, onNotify) {
       const handler = (message: { channel: string; payload?: string }) => {
@@ -113,7 +112,6 @@ export function pgListenNotify(client: PgListenClientLike): ListenNotifyLike {
         },
       };
     },
-    notify: (channel, payload) =>
-      client.query(`SELECT pg_notify(${literal(channel)}, ${literal(payload)})`),
+    notify: (channel, payload) => client.query("SELECT pg_notify($1, $2)", [channel, payload]),
   };
 }

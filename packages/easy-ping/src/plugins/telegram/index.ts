@@ -105,6 +105,43 @@ export const telegramSchema = {
   },
 } as const satisfies SchemaDeclaration;
 
+const isChatId = (value: unknown) =>
+  (typeof value === "number" && Number.isSafeInteger(value)) ||
+  (typeof value === "string" && /^-?\d{1,20}$/.test(value));
+
+const isChat = (value: unknown): boolean => {
+  const chat = value as {
+    id?: unknown;
+    type?: unknown;
+    username?: unknown;
+    title?: unknown;
+  } | null;
+  return (
+    typeof chat === "object" &&
+    chat !== null &&
+    isChatId(chat.id) &&
+    typeof chat.type === "string" &&
+    (chat.username === undefined || typeof chat.username === "string") &&
+    (chat.title === undefined || typeof chat.title === "string")
+  );
+};
+
+function isWellFormed(update: unknown): update is TelegramUpdate {
+  if (typeof update !== "object" || update === null) return false;
+  const { message, my_chat_member: member } = update as Record<string, unknown>;
+  if (message !== undefined) {
+    const m = message as { text?: unknown; chat?: unknown } | null;
+    if (typeof m !== "object" || m === null || !isChat(m.chat)) return false;
+    if (m.text !== undefined && typeof m.text !== "string") return false;
+  }
+  if (member !== undefined) {
+    const c = member as { chat?: unknown; new_chat_member?: { status?: unknown } } | null;
+    if (typeof c !== "object" || c === null || !isChat(c.chat)) return false;
+    if (typeof c.new_chat_member?.status !== "string") return false;
+  }
+  return true;
+}
+
 const randomCode = () => encodeBase64Url(crypto.getRandomValues(new Uint8Array(24)));
 
 /** Telegram refuses buttons to localhost, private hosts and non-http schemes with a 400 for the whole message. */
@@ -209,6 +246,7 @@ export function telegram(options: TelegramOptions): TelegramPlugin {
   }
 
   async function handleUpdate(update: TelegramUpdate): Promise<void> {
+    if (!isWellFormed(update)) return;
     const member = update.my_chat_member;
     if (member && ["kicked", "left"].includes(member.new_chat_member.status)) {
       await ctx.store.remove(CHAT, { chatId: String(member.chat.id) });
@@ -241,8 +279,7 @@ export function telegram(options: TelegramOptions): TelegramPlugin {
       handler: async ({ userId }) => {
         const owner = userId ?? "";
         const now = Date.now();
-        // A user's stale codes go, so the table cannot fill with abandoned links.
-        await ctx.store.remove(LINK, { userId: owner, expiresAt: { lt: new Date(now) } });
+        await ctx.store.remove(LINK, { userId: owner });
 
         const code = randomCode();
         const expiresAt = new Date(now + ttlMs);

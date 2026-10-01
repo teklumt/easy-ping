@@ -144,7 +144,16 @@ const server = createServer(async (req, res) => {
 
     const body = await new Promise<string>((resolve) => {
       const chunks: Buffer[] = [];
-      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      let size = 0;
+      req.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > 16 * 1024) {
+          req.destroy();
+          resolve("{}");
+          return;
+        }
+        chunks.push(chunk);
+      });
       req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     });
 

@@ -93,13 +93,11 @@ export async function encryptPayload(
     await crypto.subtle.exportKey("raw", serverKeys.publicKey),
   ) as Uint8Array<ArrayBuffer>;
 
-  const uaKey = await crypto.subtle.importKey(
-    "raw",
-    uaPublic,
-    { name: "ECDH", namedCurve: "P-256" },
-    false,
-    [],
-  );
+  const uaKey = await crypto.subtle
+    .importKey("raw", uaPublic, { name: "ECDH", namedCurve: "P-256" }, false, [])
+    .catch(() => {
+      throw new InvalidSubscriptionError("p256dh is not a valid P-256 public key");
+    });
 
   const shared = new Uint8Array(
     await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, serverKeys.privateKey, 256),

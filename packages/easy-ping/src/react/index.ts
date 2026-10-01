@@ -29,6 +29,12 @@ export function useNotifications(
     safetyNetMs,
     activeWindowMs,
     transport,
+    scope,
+    locks,
+    channel,
+    serviceWorker,
+    activityTarget,
+    now,
   } = options;
 
   // Held in a ref so a new callback identity per render does not rebuild the client.
@@ -46,6 +52,12 @@ export function useNotifications(
         safetyNetMs,
         activeWindowMs,
         transport,
+        scope,
+        locks,
+        channel,
+        serviceWorker,
+        activityTarget,
+        now,
         fetch: (...args) => (callbacksRef.current.fetch ?? globalThis.fetch)(...args),
         isDocumentHidden: () =>
           callbacksRef.current.isDocumentHidden?.() ??
@@ -60,6 +72,12 @@ export function useNotifications(
       safetyNetMs,
       activeWindowMs,
       transport,
+      scope,
+      locks,
+      channel,
+      serviceWorker,
+      activityTarget,
+      now,
     ],
   );
 

@@ -43,6 +43,7 @@ export async function planSqliteMigration(
   const statements: string[] = [];
   const unsupported: string[] = [];
   const createdTables: string[] = [];
+  let requiresTransaction = false;
 
   for (const table of Object.values(schema)) {
     const qualified = prefix + table.tableName;
@@ -80,6 +81,7 @@ export async function planSqliteMigration(
     };
 
     if (missing.some(([, spec]) => spec.defaultNow)) {
+      requiresTransaction = true;
       statements.push(...rebuild(relaxed, prefix, existing));
     } else {
       for (const [field] of missing) {
@@ -114,7 +116,9 @@ export async function planSqliteMigration(
     }
   }
 
-  return { statements, unsupported, createdTables };
+  return requiresTransaction
+    ? { statements, unsupported, createdTables, requiresTransaction }
+    : { statements, unsupported, createdTables };
 }
 
 /** The documented SQLite way to change a table's shape: new table, copy, drop, rename, reindex. */

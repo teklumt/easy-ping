@@ -108,7 +108,18 @@ function validate(config: EasyPingConfig<NotificationDefinitions>, plugins: read
     }
   }
 
+  const core = new Set(CORE_ROUTES.map((route) => `${route.method} ${route.path}`));
   const routes = new Set<string>();
+  for (const plugin of plugins) {
+    for (const route of plugin.routes ?? []) {
+      const signature = `${route.method} ${route.path}`;
+      if (core.has(signature)) {
+        throw new ConfigError(
+          `plugin "${plugin.id}" registers "${signature}", which is a core route. Pick another path.`,
+        );
+      }
+    }
+  }
   for (const plugin of plugins) {
     for (const route of plugin.routes ?? []) {
       const signature = `${route.method} ${route.path}`;
@@ -263,7 +274,17 @@ export function easyPing<TDefs extends NotificationDefinitions>(
     trustedOrigins: config.trustedOrigins,
     onRequest: config.onRequest,
     maxBodyBytes: config.maxBodyBytes,
-    rateLimit: config.rateLimit ? createRateLimiter(config.rateLimit) : undefined,
+    rateLimit: config.rateLimit
+      ? createRateLimiter({
+          onUnkeyed: () =>
+            logger.warn(
+              "rateLimit: a request arrived with no cf-connecting-ip, x-real-ip or x-forwarded-for " +
+                "header, so every such request shares one bucket. Put the app behind a proxy that " +
+                "sets one of them, or pass rateLimit.key (a session or API key).",
+            ),
+          ...config.rateLimit,
+        })
+      : undefined,
     cronMaxSweeps: config.cron?.maxSweeps,
     ...(config.cron?.secret ? { cronSecret: config.cron.secret } : {}),
     ...((config.machineSecret ?? config.cron?.secret)

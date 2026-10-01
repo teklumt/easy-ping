@@ -44,6 +44,8 @@ export type MobilePushOptions = {
 
 const PLATFORMS: readonly MobilePushPlatform[] = ["ios", "android", "web"];
 
+const MAX_TOKEN_LENGTH = 512;
+
 /** The tables this plugin owns, exported so DDL needs no plugin instance. */
 export const mobilePushSchema = {
   mobilePushDevice: {
@@ -138,7 +140,11 @@ export function mobilePush(options: MobilePushOptions): MobilePushPlugin {
           platform?: unknown;
           deviceName?: unknown;
         };
-        if (typeof token !== "string" || !options.provider.isValidToken(token)) {
+        if (
+          typeof token !== "string" ||
+          token.length > MAX_TOKEN_LENGTH ||
+          !options.provider.isValidToken(token)
+        ) {
           return Response.json(
             { error: `token is not a valid ${options.provider.name} push token` },
             { status: 400 },
