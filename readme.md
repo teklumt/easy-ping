@@ -43,11 +43,11 @@ hand-rolling it badly.
 | --- | --- | --- | --- |
 | **What you deploy** | nothing, it is a dependency | four services | nothing, it is their cloud |
 | **Infrastructure it adds** | none | MongoDB, Redis, S3 | none |
-| **Where notifications live** | your Postgres or MongoDB | Novu's MongoDB | theirs |
+| **Where notifications live** | your Postgres, MySQL, SQLite or MongoDB | Novu's MongoDB | theirs |
 | **Cost per notification** | none | none, you pay for servers | metered per send |
 | **License** | MIT, all of it | MIT core, commercial modules | proprietary |
 | **Visual workflow editor** | **no**, a notification is code | yes | yes |
-| **Channels out of the box** | **in-app, email, web push, Telegram** | dozens | dozens |
+| **Channels out of the box** | **in-app, email, web push, Telegram, mobile push (beta)** | dozens | dozens |
 
 The last two rows are the trade. If you need a workflow editor a non-developer can edit, use one
 of the others — they are good tools solving a bigger problem.

@@ -1,7 +1,7 @@
 {
   "name": "easy-ping",
   "version": "0.10.0",
-  "description": "Self-hosted, type-safe notifications for TypeScript apps. Your database, your users.",
+  "description": "Free, open-source notifications for TypeScript: in-app inbox, email, web push, mobile push and Telegram, self-hosted in your own Postgres, MySQL, SQLite or MongoDB.",
   "license": "MIT",
   "author": "Teklu Moges",
   "homepage": "https://easy-pings.com",
@@ -44,7 +44,9 @@
     "knock-alternative",
     "courier-alternative",
     "inbox",
-    "notification-center"
+    "notification-center",
+    "open-source",
+    "free"
   ],
   "type": "module",
   "sideEffects": false,
