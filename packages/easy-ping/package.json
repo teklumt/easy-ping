@@ -1,6 +1,6 @@
 {
   "name": "easy-ping",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Free, open-source notifications for TypeScript: in-app inbox, email, web push, mobile push and Telegram, self-hosted in your own Postgres, MySQL, SQLite or MongoDB.",
   "license": "MIT",
   "author": "Teklu Moges",

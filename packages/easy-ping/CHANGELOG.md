@@ -1,5 +1,13 @@
 # easy-ping
 
+## 0.10.2
+
+### Patch Changes
+
+- [#28](https://github.com/teklumt/easy-ping/pull/28) [`f80ec82`](https://github.com/teklumt/easy-ping/commit/f80ec82b28c057fda48fb75d2b0729ec840582e7) Thanks [@teklumt](https://github.com/teklumt)! - Reword the package description to lead with "free, open-source" and list the channels and databases, and add "open-source" and "free" to keywords.
+
+- [#28](https://github.com/teklumt/easy-ping/pull/28) [`f80ec82`](https://github.com/teklumt/easy-ping/commit/f80ec82b28c057fda48fb75d2b0729ec840582e7) Thanks [@teklumt](https://github.com/teklumt)! - Update the readme's comparison table: "Where notifications live" now lists MySQL and SQLite alongside Postgres and MongoDB, and "Channels out of the box" includes mobile push (beta).
+
 ## 0.10.1
 
 ### Patch Changes
