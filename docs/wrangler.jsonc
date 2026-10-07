@@ -1,4 +1,4 @@
-// Deployed by Workers Builds from the teklumt/easy-ping monorepo, with docs/ as its root directory.
+// Deployed by Workers Builds from the teklumt/easy-ping monorepo; docs/ is its root directory.
 {
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
   "name": "easy-ping-web",
