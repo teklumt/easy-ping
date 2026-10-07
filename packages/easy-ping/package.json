@@ -4,7 +4,7 @@
   "description": "Self-hosted, type-safe notifications for TypeScript apps. Your database, your users.",
   "license": "MIT",
   "author": "Teklu Moges",
-  "homepage": "https://github.com/teklumt/easy-ping#readme",
+  "homepage": "https://easy-pings.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/teklumt/easy-ping.git",
@@ -39,7 +39,12 @@
     "react-native",
     "expo",
     "expo-notifications",
-    "mobile-push"
+    "mobile-push",
+    "novu-alternative",
+    "knock-alternative",
+    "courier-alternative",
+    "inbox",
+    "notification-center"
   ],
   "type": "module",
   "sideEffects": false,
