@@ -1,0 +1,142 @@
+export const frontmatter = {
+  title: "MongoDB",
+  description: "The same library, the same conformance suite, no tables — just indexes.",
+};
+
+export const toc = [
+  { id: "setup", label: "Setup" },
+  { id: "replica-set", label: "Why it needs a replica set" },
+  { id: "indexes", label: "Indexes instead of migrations" },
+  { id: "plugins", label: "Plugin collections" },
+  { id: "signals", label: "Change-stream wake-ups" },
+];
+
+## Setup <a id="setup" />
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { MongoClient } from "mongodb";
+import { createMongoIndexes, mongoAdapter } from "easy-ping/adapters/mongodb";
+
+const client = new MongoClient(process.env.MONGO_URL!);
+await client.connect();
+const db = client.db("app");
+
+await createMongoIndexes(db);  // once at startup
+
+export const notify = easyPing({
+  database: mongoAdapter(db, { client }),  // pass the client, not just the db
+  // ...
+});
+```
+
+</CodeBlock>
+
+Everything above the `database` line is identical to the Postgres path — same config shape, same
+`send()`, same routes, same client. The adapter boundary is the only thing that changes.
+
+<Note tag="Pass the client">
+  `{ client }` is what makes `createNotifications` atomic — a notification and its deliveries land
+  in one transaction, or neither does. Omit it and the adapter still works; it just stops
+  guaranteeing that a crash between the two writes can't leave a notification with no deliveries.
+</Note>
+
+## Why it needs a replica set <a id="replica-set" />
+
+MongoDB only offers transactions on a replica set — a standalone `mongod` rejects a session
+outright. A single-node replica set is enough for local development:
+
+<CodeBlock title="docker-compose.yml">
+
+```yaml
+mongo:
+  image: mongo:7
+  command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+  ports: ["27017:27017"]
+  healthcheck:
+    test: mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate().ok }"
+    interval: 2s
+    retries: 30
+```
+
+</CodeBlock>
+
+## Indexes instead of migrations <a id="indexes" />
+
+There are no tables on MongoDB, so there's nothing to migrate in the SQL sense —
+`createMongoIndexes(db)` is both the setup step and the upgrade step, because `createIndex` is
+idempotent: rerunning it after a version bump adds whatever's new and leaves existing indexes
+alone. See [Upgrading](/docs/upgrading) for how this compares to the Postgres path.
+
+One index is worth knowing about specifically: the dedupe index is a **partial** unique index
+(`partialFilterExpression: { dedupeKey: { $type: "string" } }`), because a plain unique index
+treats every missing `dedupeKey` as the same `null` and would allow exactly one undeduped
+notification per user — the opposite of what Postgres does with `NULL`. The partial filter is
+what makes the two databases agree on dedupe semantics.
+
+## Plugin collections <a id="plugins" />
+
+Plugins that own storage (push, Telegram, mobile push, preferences, digests) declare it as a
+schema. On MongoDB that becomes indexes, created with `createPluginIndexes` next to
+`createMongoIndexes`. Same idempotency: run both at every startup.
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { createMongoIndexes, createPluginIndexes, mongoAdapter } from "easy-ping/adapters/mongodb";
+import { preferences } from "easy-ping/plugins/preferences";
+import { push } from "easy-ping/plugins/push";
+
+const plugins = [preferences(), push({ provider, render })];
+
+await createMongoIndexes(db);
+for (const plugin of plugins) {
+  if (plugin.schema) await createPluginIndexes(db, plugin.schema);
+}
+
+export const notify = easyPing({ database: mongoAdapter(db, { client }), plugins /* , ... */ });
+```
+
+</CodeBlock>
+
+Looping over the plugins you pass to `easyPing` means a plugin added later cannot be forgotten.
+The channel plugins also export their schema standalone, for a setup script that has no plugin
+instance: `pushSchema` from `easy-ping/plugins/push`, `telegramSchema` from
+`easy-ping/plugins/telegram`, `mobilePushSchema` from `easy-ping/plugins/mobile-push`.
+
+<CodeBlock bare>
+
+```ts
+import { pushSchema } from "easy-ping/plugins/push";
+await createPluginIndexes(db, pushSchema);
+```
+
+</CodeBlock>
+
+If you pass `prefix` to `mongoAdapter`, pass the same one as the third argument:
+`createPluginIndexes(db, pushSchema, "app_")`.
+
+## Change-stream wake-ups <a id="signals" />
+
+The replica set you already run for transactions also gives you change streams, which is what
+`mongoSignals` uses to wake other replicas' workers and [event streams](/docs/in-app-inbox#transport)
+when this one commits a send:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import { mongoAdapter, mongoSignals } from "easy-ping/adapters/mongodb";
+
+export const notify = easyPing({
+  database: mongoAdapter(db, { client }),
+  signals: mongoSignals(db),   // { collection?: "easy_ping_signals", size?: 1 MiB, onError? }
+  // ...
+});
+```
+
+</CodeBlock>
+
+Signals are inserts into a small capped collection that the process creates on first use and
+watches for inserts. Old signals fall off the end; nobody reads history. Each process tags its own
+inserts so it does not react to its own echo.

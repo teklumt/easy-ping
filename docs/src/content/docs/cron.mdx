@@ -1,0 +1,59 @@
+export const frontmatter = {
+  title: "Cron sweep",
+  description: "The durability floor beneath every delivery mode. Required for cron and deferred, recommended everywhere.",
+};
+
+export const toc = [
+  { id: "why", label: "Why it exists" },
+  { id: "wiring", label: "Wiring it up" },
+  { id: "frequency", label: "Choosing a frequency" },
+  { id: "digests-cron", label: "The digests plugin has its own" },
+];
+
+## Why it exists <a id="why" />
+
+Every delivery mode writes the same committed rows; the sweep is what guarantees a `pending`
+delivery eventually gets attempted even if `waitUntil` never fires, an in-process worker crashes,
+or a serverless function is frozen mid-request. See [Delivery modes](/docs/delivery-modes) for how
+the modes layer on top of it.
+
+## Wiring it up <a id="wiring" />
+
+A single authenticated POST, from anything that can run on a schedule:
+
+<CodeBlock bare>
+
+```ts
+POST /api/notifications/cron
+Authorization: Bearer $NOTIFY_CRON_SECRET
+```
+
+</CodeBlock>
+
+Vercel Cron, a GitHub Actions scheduled workflow, a cron container hitting curl, your existing
+job scheduler — any of them work. There's nothing special about the caller; it just needs to be
+able to make an authenticated HTTP request on an interval.
+
+<Note tag="Security">
+  Unauthenticated, this route is a free "flush everything right now" trigger against your email
+  provider. `cron.secret` is compared in constant time; treat it like any other credential.
+</Note>
+
+## Choosing a frequency <a id="frequency" />
+
+1–5 minutes is the usual range. Two things scale with the interval:
+
+- **Worst-case latency** for anything relying on `cron` mode alone (no `inline`/`deferred`/`worker`
+  layered on top) — a notification can wait up to one full interval before its first attempt.
+- **Retry pacing** — backoff intervals are floored by the cron frequency, so a 5-minute cron can't
+  retry a failed delivery faster than 5 minutes regardless of what the backoff schedule says.
+
+There's no lower bound the library enforces; a busy app can run it every 30 seconds if the
+scheduler supports it.
+
+## The digests plugin has its own <a id="digests-cron" />
+
+`digests()` registers a separate `/digests/cron` route, machine-scoped the same way, meant to be
+hit hourly rather than on the main interval — digest windows are computed in the recipient's own
+timezone, and hourly is what makes "9am" resolve correctly across DST without a second scheduler
+per timezone. See [Digests](/docs/digests).

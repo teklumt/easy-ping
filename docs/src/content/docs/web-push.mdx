@@ -1,0 +1,194 @@
+export const frontmatter = {
+  title: "Web push",
+  description: "VAPID and aes128gcm on Web Crypto — no node:crypto, so it runs on Workers and Edge, not only Node.",
+};
+
+export const toc = [
+  { id: "vapid", label: "Generating VAPID keys" },
+  { id: "setup", label: "Provider and plugin" },
+  { id: "worker", label: "The service worker" },
+  { id: "subscribe", label: "Subscribing a browser" },
+  { id: "browser-api", label: "Browser API reference" },
+  { id: "pruning", label: "Dead endpoints" },
+  { id: "caveats", label: "Platform caveats" },
+];
+
+Web push is a plugin (`push`) plus a provider (`webPush`), because the channel needs a device
+registry the core schema doesn't have — see [Push devices](/docs/push-plugin) for that table and
+its routes.
+
+## Generating VAPID keys <a id="vapid" />
+
+One keypair, generated once and stored as secrets.
+
+<CodeBlock bare title="scripts/vapid.ts — run ONCE, never at startup">
+
+```ts
+import { generateVapidKeys } from "easy-ping/providers/web-push";
+
+// ONE-TIME SETUP. Do not run this again, and never call it from app code or a deploy step:
+// a new keypair silently invalidates every existing browser subscription.
+const vapid = await generateVapidKeys();
+console.log(vapid); // { publicKey, privateKey } -> store both as secrets (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+```
+
+</CodeBlock>
+
+<Note tag="Never rotate casually">
+  Every browser subscription is bound to the public key it was created with. Generate a new
+  keypair and every existing subscriber stops receiving push, with no error on your side: the
+  push services just reject the old subscriptions and the plugin prunes them. If you ever must
+  rotate, re-subscribe users afterwards (call `subscribeToPush` again on their next visit).
+</Note>
+
+## Provider and plugin <a id="setup" />
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { push } from "easy-ping/plugins/push";
+import { webPush } from "easy-ping/providers/web-push";
+
+const pushPlugin = push({
+  provider: webPush({
+    subject: "mailto:ops@acme.dev",  // or an https: URL
+    vapid: { publicKey: process.env.VAPID_PUBLIC_KEY!, privateKey: process.env.VAPID_PRIVATE_KEY! },
+  }),
+  render: ({ type, payload }) => {
+    const data = payload as { title?: string; body?: string };
+    return { title: data.title ?? type, body: data.body ?? "You have a new notification" };
+  },
+});
+
+export const notify = easyPing({
+  // ...
+  plugins: [pushPlugin],
+});
+```
+
+</CodeBlock>
+
+`render` builds what actually shows up in the OS notification. It receives the same typed payload
+your notification's `schema` validates.
+
+## The service worker <a id="worker" />
+
+This is the one piece the library genuinely cannot supply — it has to run in your app's own
+origin. Without a `push` listener, the browser shows its own generic "site updated" text instead
+of your title and body.
+
+**No build step.** The file below is plain JavaScript with no imports: put it in your static folder
+(`public/sw.js` in Next.js and Vite) and it is served as-is. `subscribeToPush` registers
+`/sw.js` by default; pass `serviceWorkerPath` if you put it elsewhere.
+
+<CodeBlock title="public/sw.js">
+
+```ts
+self.addEventListener("push", (event) => {
+  const payload = event.data ? event.data.json() : {};
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title ?? "Notification", {
+      body: payload.body ?? "",
+      data: payload.data ?? {},
+      tag: payload.data?.notificationId,
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.openWindow("/"));
+});
+```
+
+</CodeBlock>
+
+<Note tag="Want the bell to update too?">
+  `handlePush` from `easy-ping/sw` does the same as the snippet above and also tells open tabs the
+  inbox changed (see [In-app inbox](/docs/in-app-inbox#piggyback)). It is an ES module, so a worker
+  that imports it **must be bundled** (esbuild, Vite, or your framework's worker build) into a
+  single file first; an unbundled `import` fails because `subscribeToPush` registers a classic
+  worker. Always wrap it: `self.addEventListener("push", (event) => event.waitUntil(handlePush(event)))`.
+</Note>
+
+## Subscribing a browser <a id="subscribe" />
+
+<CodeBlock title="components/EnablePush.tsx">
+
+```ts
+import { subscribeToPush, isPushSupported } from "easy-ping/browser";
+
+async function enable() {
+  if (!isPushSupported()) return;
+
+  const { vapidPublicKey } = await fetch("/api/config").then((r) => r.json());
+
+  await subscribeToPush({
+    publicKey: vapidPublicKey,
+    baseUrl: "/api/notifications",
+  });
+}
+```
+
+</CodeBlock>
+
+This registers the service worker (if not already registered), requests the notification
+permission, calls `pushManager.subscribe`, and POSTs the resulting subscription to
+`/push/devices` — one call covers the whole browser-side flow.
+
+## Browser API reference <a id="browser-api" />
+
+Everything below comes from `easy-ping/browser` and runs in the page, not the worker.
+
+<CodeBlock bare>
+
+```ts
+isPushSupported(): boolean
+// true when the browser has service workers, PushManager and Notification.
+
+subscribeToPush(options: {
+  publicKey: string;            // VAPID public key, base64url — the same one the server signs with
+  baseUrl?: string;             // default "/api/notifications"
+  serviceWorkerPath?: string;   // default "/sw.js"
+  scope?: string;               // service worker scope, default the path's directory
+  fetch?: typeof fetch;         // your authenticated fetch, if cookies are not enough
+}): Promise<{ endpoint: string; keys: { p256dh: string; auth: string } }>
+// Registers the worker, waits for it to be active, asks permission (only if not yet decided),
+// reuses an existing subscription or creates one, then POSTs it to /push/devices.
+// Throws PushUnsupportedError (no push in this browser), PushPermissionError (denied or dismissed;
+// .message carries the permission state) or Error on a non-2xx from the server (409 = the endpoint
+// belongs to another account).
+
+unsubscribeFromPush(options: Omit<SubscribeOptions, "publicKey">): Promise<boolean>
+// Tells the server first (POST /push/devices/remove), then unsubscribes the browser.
+// Resolves false when there was no subscription.
+
+decodeVapidKey(publicKey: string): Uint8Array
+// The base64url -> bytes step subscribeToPush does for you; exported for custom flows.
+```
+
+</CodeBlock>
+
+Call `subscribeToPush` from a click handler: browsers block permission prompts that are not
+triggered by a user gesture.
+
+## Dead endpoints <a id="pruning" />
+
+When a push service reports an endpoint gone (404/410 — the user uninstalled, cleared site data,
+or the subscription expired), the provider surfaces `{ expired: true }` and the device row is
+deleted automatically on the next delivery attempt. An unpruned registry accumulates dead
+subscriptions forever, and every send slows down fanning out to endpoints that will never accept
+anything again.
+
+## Platform caveats <a id="caveats" />
+
+<Note tag="Secure context">
+  `localhost` counts as secure, so push works there without HTTPS. Any other host needs real TLS —
+  the service worker will refuse to register otherwise.
+</Note>
+
+<Note tag="iOS">
+  Web push only reaches an iOS **PWA installed to the home screen** (Safari 16.4+). Desktop
+  Safari 16+, and Chrome/Edge/Firefox everywhere, work as a normal browser tab.
+</Note>

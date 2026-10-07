@@ -1,0 +1,157 @@
+export const frontmatter = {
+  title: "SQLite",
+  description:
+    "SQLite through node:sqlite, better-sqlite3 or anything with the same prepare().all()/run() shape. One writer, so the claim is one UPDATE.",
+};
+
+export const toc = [
+  { id: "setup", label: "Setup" },
+  { id: "drivers", label: "Drivers" },
+  { id: "claim", label: "How a claim works here" },
+  { id: "tables", label: "Creating the tables" },
+  { id: "storage", label: "How things are stored" },
+  { id: "upgrading", label: "Upgrading an existing database" },
+  { id: "signals", label: "Wake-ups" },
+];
+
+## Setup <a id="setup" />
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { createSqliteTables, sqliteAdapter, sqliteQuery, sqliteTransaction } from "easy-ping/adapters/sqlite";
+import { DatabaseSync } from "node:sqlite";
+
+const db = new DatabaseSync("./app.db");
+const query = sqliteQuery(db);
+
+await createSqliteTables(query);
+
+export const notify = easyPing({
+  database: sqliteAdapter(query, { transaction: sqliteTransaction(db) }),
+  // ...
+});
+```
+
+</CodeBlock>
+
+`node:sqlite` ships with Node 22.13 and later, no install. The library itself never imports it —
+you hand it the database object — so the package's Node 20 floor is unchanged and nothing native
+enters the dependency tree.
+
+## Drivers <a id="drivers" />
+
+`sqliteQuery` takes anything with `prepare(sql)` returning a statement that has
+`all(...params)` and `run(...params) => { changes }`, plus `exec(sql)` for transactions. That is
+`node:sqlite`'s `DatabaseSync` and better-sqlite3's `Database`, unchanged:
+
+<CodeBlock bare>
+
+```ts
+import Database from "better-sqlite3";
+
+const db = new Database("./app.db");
+sqliteAdapter(sqliteQuery(db), { transaction: sqliteTransaction(db) });
+```
+
+</CodeBlock>
+
+`sqliteTransaction` queues transactions one behind another. The driver is synchronous but the
+adapter awaits between statements, and SQLite refuses a `BEGIN` while one is open; the queue is
+what lets two concurrent `send()` calls both be atomic.
+
+## How a claim works here <a id="claim" />
+
+<CodeBlock bare>
+
+```sql
+UPDATE notification_delivery SET status = 'claimed', claimed_at = ?, claimed_by = ?
+WHERE id IN (SELECT id FROM notification_delivery WHERE … ORDER BY not_before, id LIMIT ?)
+```
+
+</CodeBlock>
+
+One statement. SQLite has exactly one writer at a time, so two sweeps cannot interleave inside
+it, which is the guarantee `FOR UPDATE SKIP LOCKED` exists to give on Postgres. The `rowLock`
+conformance case does not apply — there is no lock held across statements for a second sweep to
+skip — and the suite filters it out rather than faking it, the same as MongoDB.
+
+## Creating the tables <a id="tables" />
+
+`createSqliteTables(query, { plugins?, prefix? })` creates the core tables and any plugin schemas
+you pass, `IF NOT EXISTS`, safe on every boot. `renderSqliteDdl` from `easy-ping/schema` gives you
+the statements instead.
+
+<CodeBlock bare>
+
+```ts
+const plugins = [preferences(), push({ provider, render })];
+
+await createSqliteTables(query, {
+  plugins: plugins.flatMap((plugin) => (plugin.schema ? [plugin.schema] : [])),
+  prefix: "",   // must match sqliteAdapter's prefix and easyPing's tablePrefix
+});
+```
+
+</CodeBlock>
+
+Which plugins own storage, and where their declaration comes from:
+
+| Plugin | Schema | Tables |
+| --- | --- | --- |
+| push | `pushSchema` from `easy-ping/plugins/push` | `notification_push_device` |
+| telegram | `telegramSchema` from `easy-ping/plugins/telegram` | `notification_telegram_chat`, `notification_telegram_link` |
+| mobilePush | `mobilePushSchema` from `easy-ping/plugins/mobile-push` | `notification_mobile_push_device`, `notification_mobile_push_ticket` |
+| preferences | `preferences().schema` | `notification_preference` |
+| digests | `digests().schema` | its bucket table |
+
+A plugin whose table is missing fails on its first read or write, not at startup, so create the
+tables for every plugin you pass to `easyPing`. Looping over that same array is the way to make
+sure none is forgotten.
+
+## How things are stored <a id="storage" />
+
+| declared | SQLite column |
+| --- | --- |
+| string, json | `TEXT` (JSON as text; the adapter parses on read) |
+| number, boolean | `INTEGER` (booleans as 0/1; the adapter reads them back as booleans) |
+| date | `TEXT`, ISO-8601 with milliseconds and a trailing `Z` |
+
+Dates are the same 24 characters `Date#toISOString` produces, so `<=` on the text is `<=` on the
+instant, and a `DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` writes the identical shape.
+## Upgrading an existing database <a id="upgrading" />
+
+`createSqliteTables` never alters what exists. After an upgrade that adds a column, run
+`planSqliteMigration` inside one transaction:
+
+<CodeBlock bare title="scripts/migrate.ts">
+
+```ts
+import { coreSchema, planSqliteMigration } from "easy-ping/schema";
+
+db.exec("BEGIN");
+for (const schema of [coreSchema, ...plugins.flatMap((p) => (p.schema ? [p.schema] : []))]) {
+  const plan = await planSqliteMigration(query, schema, "");   // same prefix as the adapter
+  for (const statement of plan.statements) db.exec(statement);
+  if (plan.unsupported.length) console.warn(plan.unsupported);
+}
+db.exec("COMMIT");
+```
+
+</CodeBlock>
+
+It reads the live columns through `pragma_table_info` and adds only what is missing. One SQLite
+rule shapes the output: `ALTER TABLE ... ADD COLUMN` cannot carry a non-constant default, and
+every timestamp column defaults to the current time. A table that gains such a column is therefore
+**rebuilt** the way SQLite documents it: a copy with the new shape, the rows moved across, the old
+table dropped, the copy renamed, the indexes recreated. Any other missing column is a plain
+`ADD COLUMN`. Type changes and undeclared columns are reported in `plan.unsupported`, never
+touched. Back up the file before running it on data you care about.
+
+## Wake-ups <a id="signals" />
+
+SQLite has one writer, which in practice means one process, and there the default in-memory
+signals are exact: a send wakes the worker and every open [event stream](/docs/in-app-inbox#transport)
+immediately. No `sqliteSignals` exists or is needed. If several processes do share one file, the
+event stream's fingerprint probe (`events.probeIntervalMs`, 30 s) and the cron sweep cover the
+others.

@@ -1,0 +1,130 @@
+export const frontmatter = {
+  title: "Delivery modes",
+  description: "Four ways to run providers after send() returns, all sitting on the same cron sweep.",
+};
+
+export const toc = [
+  { id: "table", label: "The four modes" },
+  { id: "additive", label: "Modes are additive" },
+  { id: "retries", label: "Retry and backoff" },
+  { id: "worker", label: "The in-process worker" },
+  { id: "sweep-on-request", label: "Sweeping on request" },
+  { id: "signals", label: "Wake-ups across replicas" },
+];
+
+## The four modes <a id="table" />
+
+| Mode | Delivery happens | Latency | Needs cron |
+| --- | --- | --- | --- |
+| `inline` | Before `send()` resolves | in-request | recommended |
+| `deferred` | After the response, via `waitUntil` | ~1&nbsp;s | **yes** |
+| `worker` | In-process loop, woken by `send()` | instant in-process, up to 10&nbsp;s across replicas | optional |
+| `cron` | When the sweep runs | up to the interval | **yes** |
+
+`inline` is the simplest to reason about and the right default for a demo or a low-traffic app —
+it does briefly hold the request open for the write-then-claim-then-deliver cycle, which is still
+far faster than a request that waits on an email API directly.
+
+## Modes are additive, not alternatives <a id="additive" />
+
+This is the detail that matters most: `deferred` and `worker` are **latency optimizations layered
+over the cron sweep**, not replacements for it. The notification and delivery rows are committed
+in the same transaction `send()` writes, regardless of mode. If `waitUntil` never fires, or the
+worker process crashes, or a serverless platform freezes the function before delivery runs — the
+row is still there, still `pending`, and the next `/cron` sweep picks it up.
+
+That's why every mode except `inline` needs `cron.secret` configured and a scheduler actually
+hitting `/cron`: it's not a fallback for edge cases, it's the floor every other mode stands on.
+[Wire it up](/docs/cron) before you rely on any of the faster paths.
+
+## Retry and backoff <a id="retries" />
+
+Delivery is **at-least-once**. A failed attempt gets retried with exponential backoff and jitter:
+30s → 2m → 8m → 32m, five attempts by default, configurable via `delivery.maxAttempts`. The
+interval is floored by your cron frequency — a 5-minute cron can't retry faster than 5 minutes no
+matter what the backoff schedule says.
+
+Not every failure retries. A provider marks its own errors retryable or not:
+
+- **Retryable** — timeouts, rate limits (429), 5xx. The delivery goes back to `pending` with a
+  future `notBefore`.
+- **Not retryable** — a revoked API key, an invalid recipient. The delivery goes straight to
+  `failed` rather than burning all five attempts on something that will never succeed.
+
+See [When something fails](/docs/failures) for how to see failed deliveries after the fact.
+
+<Note tag="Not for">
+  OTP or 2FA codes. Use your auth library's own sender — a retry-and-sweep model is the wrong
+  shape for a 60-second TTL.
+</Note>
+
+## The in-process worker <a id="worker" />
+
+`worker` mode runs a loop inside your own Node process instead of relying on an external
+scheduler for the fast path (cron is still required as the floor):
+
+<CodeBlock bare>
+
+```ts
+const worker = notify.startWorker(); // intervalMs defaults to 10_000
+process.on("SIGTERM", () => worker.stop()); // drains in-flight work, releases leases
+```
+
+</CodeBlock>
+
+The loop does not poll every second any more. A `send()` in the same process wakes it at once,
+so the interval only decides how quickly it notices work committed *elsewhere*: another replica,
+a retry whose `notBefore` has passed. Ten seconds is the default; with a cross-process
+[signal](#signals) the wake-up crosses replicas too and the interval can be longer.
+
+Calling `stop()` waits for in-flight deliveries to finish and releases any claim leases before
+resolving, so a graceful shutdown doesn't leave rows wedged in `claimed` until their lease expires.
+
+## Sweeping on request <a id="sweep-on-request" />
+
+On a free-tier serverless host you often have traffic but no scheduler that runs more than once
+every few minutes. `delivery.sweepOnRequest` runs a small, bounded delivery pass after any request
+the handler serves, throttled to at most one every 5 seconds per process:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+delivery: {
+  mode: "cron",
+  sweepOnRequest: true,                  // or { everyMs: 5_000, limit: 5 }
+  waitUntil: (p) => after(p),            // optional: hands the pass to the platform
+},
+```
+
+</CodeBlock>
+
+The cron sweep is still the floor. This only means the next page load delivers what the last one
+committed, instead of waiting for the scheduler. It is ignored in `inline` mode, where nothing is
+ever left pending.
+
+## Wake-ups across replicas <a id="signals" />
+
+Everything that reacts to a change, the worker and the [event stream](/docs/in-app-inbox#transport)
+behind the bell, listens on the `signals` seam. A publish carries no payload, just "something
+changed on this channel, go look", so a lost signal costs latency and never a notification.
+
+The default is in-memory, which is exactly right on SQLite or a single process. For several
+replicas, two database-native implementations ship:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import { postgresSignals } from "easy-ping/adapters/postgres";
+import { mongoSignals } from "easy-ping/adapters/mongodb";
+
+easyPing({ ..., signals: postgresSignals(sql) });   // LISTEN/NOTIFY on one channel, "easy_ping"
+easyPing({ ..., signals: mongoSignals(db) });       // change stream on a capped collection
+```
+
+</CodeBlock>
+
+`postgresSignals` takes anything shaped like postgres.js's `sql` (`listen` + `notify`); wrap a
+dedicated node-postgres `Client` with `pgListenNotify(client)`. LISTEN needs a real connection, so
+behind PgBouncer in transaction mode point it at the database directly. `mongoSignals` needs the
+replica set the adapter already needs. MySQL has no equivalent; there, the event stream falls back
+to a fingerprint probe every `events.probeIntervalMs` (30 s) and the worker to its interval.

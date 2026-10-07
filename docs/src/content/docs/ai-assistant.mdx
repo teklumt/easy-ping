@@ -1,0 +1,64 @@
+import { PromptSection } from "../../components/PromptSection";
+
+export const frontmatter = {
+  title: "Use with an AI assistant",
+  description:
+    "easy-ping shipped after every current model's training cutoff. Here's how to make Cursor or Claude write against the real API instead of an invented one.",
+};
+
+export const toc = [
+  { id: "why", label: "Why this page exists" },
+  { id: "prompts", label: "Copy a prompt" },
+  { id: "files", label: "llms.txt and llms-full.txt" },
+  { id: "tips", label: "What to check in the diff" },
+];
+
+## Why this page exists <a id="why" />
+
+Ask an assistant to "add easy-ping to my app" with no other context, and it will confidently
+write `notify.createNotification({...})` or `notify.registerChannel(...)` — plausible-sounding
+methods that don't exist. That's not the model being careless; it genuinely has never seen this
+library, because it shipped after every current model's training cutoff.
+
+The fix is cheap: paste the real API surface into the conversation before you ask for anything.
+Every prompt below already has it built in.
+
+## Copy a prompt <a id="prompts" />
+
+Pick the one closest to your task, paste it into your assistant, then fill in the `<placeholder>`
+bits with your actual stack.
+
+<PromptSection />
+
+## llms.txt and llms-full.txt <a id="files" />
+
+Served from the site root, following the emerging [llms.txt](https://llmstxt.org) convention:
+
+- **`/llms.txt`** — a short index: what the library is, and links to the key docs pages.
+- **`/llms-full.txt`** — the same API context block every prompt above uses, as a plain text file
+  an assistant with web access (or a build step that fetches it) can pull in directly.
+
+Both are generated from one source file (`src/lib/prompts.ts`) at build time, so the copy-paste
+prompts on this page and the two static files can't drift apart — see the site's
+[README](https://github.com/teklumt/easy-ping/tree/main/docs#the-ai-context-feature)
+if you're contributing to the docs.
+
+## What to check in the diff <a id="tips" />
+
+Even with the context, review what comes back for these three things — they're the ones most
+likely to regress if the assistant leans on a pattern from a different library:
+
+- **`session.getUserId` is present and reads your real auth.** A stub that returns a hardcoded id
+  is a security hole, not a placeholder.
+- **`send()` is awaited but nothing after it blocks on a provider.** If the diff adds a manual
+  `await resend.emails.send(...)` next to `notify.send(...)`, that's the assistant reaching for a
+  pattern it knows instead of the one this library gives you for free.
+- **A `/cron` route actually exists somewhere**, if the delivery mode is `"cron"` or `"deferred"`.
+  It's the easiest step to forget, and the failure mode — notifications silently never leaving
+  `pending` — has no error message pointing back at the missing endpoint.
+- **The secrets are real and the templates escape.** A literal `secret: "changeme"` fails at
+  startup, so you'll notice that one; a template that interpolates `payload.authorName` raw will
+  not fail anywhere, it will just deliver a user's HTML from your domain. Look for `escapeHtml`.
+- **Any hand-written `fetch` sends `Content-Type: application/json`.** Since 0.4.0 a POST without
+  it is a 415, and a cross-origin one is a 403 unless the origin is in `trustedOrigins`. The
+  shipped client and hook already do this; an assistant that writes its own calls may not.

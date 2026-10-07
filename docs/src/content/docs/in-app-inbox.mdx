@@ -1,0 +1,187 @@
+export const frontmatter = {
+  title: "In-app inbox",
+  description: "Built into core — cursor pagination, a headless React hook, and seen vs. read as genuinely different states.",
+};
+
+export const toc = [
+  { id: "enabling", label: "Enabling it" },
+  { id: "seen-vs-read", label: "Seen vs. read" },
+  { id: "hook", label: "useNotifications" },
+  { id: "client", label: "Without React" },
+  { id: "transport", label: "How it stays fresh" },
+  { id: "piggyback", label: "Piggyback and push relay" },
+];
+
+## Enabling it <a id="enabling" />
+
+No provider needed — it's the one channel core delivers itself, straight into your own database.
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+channels: { inApp: { enabled: true } },
+```
+
+</CodeBlock>
+
+## Seen vs. read <a id="seen-vs-read" />
+
+These are two separate pieces of state on every notification, and conflating them is the most
+common inbox bug:
+
+- **Seen** clears the unread **badge count**. It fires once, in bulk, when the user opens the
+  dropdown — `markSeen()` / `POST /seen`.
+- **Read** marks one specific item, and it stays true until explicitly set. An item can be seen
+  (the badge is gone) but still unread (still rendered bold) until the user actually clicks it.
+
+`markRead` is idempotent by design: re-marking an already-read notification returns success
+rather than a 404. Early versions of this made the client's optimistic update roll back and show
+a just-read item as unread again — worth knowing if you ever call it defensively from more than
+one place.
+
+## useNotifications <a id="hook" />
+
+<CodeBlock bare>
+
+```ts
+const {
+  notifications,   // NotificationView[] — currently loaded page(s)
+  unseenCount,     // number — server-authoritative
+  unreadCount,     // number — derived from what's loaded, not a server total
+  nextCursor,
+  isLoading,
+  error,
+  markAsRead,      // (id: string) => Promise<void>
+  markAllRead,     // () => Promise<void>
+  markSeen,        // () => Promise<void>
+  loadMore,        // () => Promise<void>
+} = useNotifications();
+```
+
+</CodeBlock>
+
+It keeps itself fresh over the event stream described below, applies optimistic updates for
+`markAsRead`/`markAllRead`/`markSeen`, and rolls an update back if the request fails.
+
+The hook passes `transport`, `pollIntervalMs`, `maxPollIntervalMs`, `safetyNetMs` and
+`activeWindowMs` straight through to the client.
+
+## Without React <a id="client" />
+
+`useNotifications` is a thin wrapper over `createNotifyClient`, which has no framework dependency
+— useful for Vue, Svelte, or a vanilla script:
+
+<CodeBlock bare title="from 'easy-ping/client'">
+
+```ts
+const client = createNotifyClient({
+  baseUrl: "/api/notifications",
+});
+
+client.subscribe((state) => {
+  // state: the same shape useNotifications returns, minus the React bindings
+});
+
+client.getTransport(); // { role: "leader" | "follower" | "solo", transport: "sse" | "poll", connected }
+```
+
+</CodeBlock>
+
+## How it stays fresh <a id="transport" />
+
+No socket server, no third-party realtime service. When the first component subscribes, the
+client does three things:
+
+1. **Elects one tab per browser.** It takes a `navigator.locks` lock named after the mount. The
+   tab that holds it is the *leader*; every other tab is a *follower* that mirrors the leader's
+   state over a `BroadcastChannel` and never talks to the server on its own schedule. Ten open
+   tabs cost one connection. When the leader closes, the lock passes to the next tab, which takes
+   over without a gap.
+2. **Opens the event stream.** The leader holds `GET /events`, a server-sent event stream that
+   says `ready` once and `changed` whenever this user's inbox moves: after a `send()`, a
+   `/read`, a `/seen`. Nothing else travels on it; the client refetches the first page on
+   `changed`. While the stream is up, a poll runs only as a safety net every 5 minutes.
+3. **Falls back to polling when it must.** Some hosts cut long responses (Vercel Hobby at 10 s).
+   If three streams in a row die young, the client stops trying for the session and polls instead.
+   That polling is shaped by activity: `pollIntervalMs` (15 s) while the user is typing or
+   clicking, doubling towards `maxPollIntervalMs` (10 min) once they stop, back to the fast
+   interval on the next keypress, focus or return from another tab. A hidden tab does not poll.
+
+<CodeBlock bare title="options">
+
+```ts
+createNotifyClient({
+  transport: "auto",        // "auto": stream when a DOM exists; "sse": always try; "poll": never stream
+  pollIntervalMs: 15_000,   // active-user poll interval, and the fallback base
+  maxPollIntervalMs: 600_000,
+  safetyNetMs: 300_000,     // poll interval while the stream is connected
+  activeWindowMs: 60_000,   // how long after input the fast interval holds
+  scope: session.userId,    // only if identity is not a cookie; see below
+});
+```
+
+</CodeBlock>
+
+<Note tag="scope">
+  The leader lock and the tab channel are named after the mount, so every tab on the origin joins
+  one group. That is right when one browser is one signed-in user, which a session cookie
+  guarantees. If your app identifies the user some other way, such as a header your custom
+  `fetch` adds, two tabs signed in as different people would share a leader and mirror each
+  other's inbox. Pass `scope` (the user id or session id) and each user gets their own group.
+</Note>
+
+`transport: "poll"` restores the pre-0.6 behaviour exactly. The stream can also be removed on the
+server with `events: false`, in which case the client's first attempt fails and it polls.
+
+Whether `changed` arrives in under a second or in up to 30 depends on the server side: with a
+cross-process [signal](/docs/configuration#events) (Postgres `LISTEN/NOTIFY`, a Mongo change
+stream) a send on any replica reaches every stream at once; without one, each stream compares a
+cheap fingerprint of the inbox every `events.probeIntervalMs`. On SQLite or a single replica the
+in-memory default is already instant.
+
+## Piggyback and push relay <a id="piggyback" />
+
+Two optional ways to make the bell fresh with no dedicated request at all.
+
+**Piggyback on your own API.** Every response your app already sends can carry the user's inbox
+version; the client refreshes only when that number moves.
+
+<CodeBlock bare title="app/api/anything/route.ts">
+
+```ts
+return Response.json(data, { headers: notify.inboxHeaders(userId) });
+```
+
+</CodeBlock>
+
+<CodeBlock bare title="client">
+
+```ts
+const client = createNotifyClient();
+const fetchWithBell = client.instrument(fetch); // use this for your app's own calls
+```
+
+</CodeBlock>
+
+**Relay from the service worker.** If you run the [push plugin](/docs/push-plugin), the same
+push that shows an OS notification can wake the open tabs:
+
+<CodeBlock bare title="public/sw.js">
+
+```ts
+import { handlePush } from "easy-ping/sw";
+self.addEventListener("push", (event) => event.waitUntil(handlePush(event)));
+```
+
+</CodeBlock>
+
+`easy-ping/sw` is an ES module, so bundle the worker into one file (esbuild, Vite or your
+framework's worker build); an unbundled `import` fails in the classic worker `subscribeToPush`
+registers. Keep the `event.waitUntil(...)`: without it the browser may stop the worker before the
+notification is shown.
+
+`handlePush` shows the notification and posts `{ source: "easy-ping", type: "changed" }` to every
+window client; the client listens on `navigator.serviceWorker` and refreshes.
+
+`instrument(fetch)` only reads the header from responses on the page's own origin. A third-party
+API the app calls cannot steer the bell.

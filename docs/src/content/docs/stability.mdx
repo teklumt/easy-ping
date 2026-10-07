@@ -1,0 +1,82 @@
+export const frontmatter = {
+  title: "Stability and versioning",
+  description: "What you can build on today without it moving, what may still change before 1.0, and how a change is announced when it does.",
+};
+
+export const toc = [
+  { id: "versions", label: "How versions work" },
+  { id: "stable", label: "What is stable" },
+  { id: "may-change", label: "What may still change" },
+  { id: "breaking", label: "How a breaking change ships" },
+  { id: "support", label: "Supported runtimes and databases" },
+  { id: "one-oh", label: "What 1.0 means" },
+];
+
+easy-ping is pre-1.0, and says so. This page makes that concrete: most of the surface you touch is
+already settled, and the parts that are not are named.
+
+## How versions work <a id="versions" />
+
+Semantic versioning, with the usual pre-1.0 reading:
+
+- **Patch** (`0.8.0` → `0.8.1`): fixes and documentation. Never a breaking change.
+- **Minor** (`0.8` → `0.9`): new features, and the only place a breaking change can land before
+  1.0. Most minors have none.
+- Every release is cut from a changeset and listed with its reasons in the [changelog](/docs/changelog).
+
+Pin a minor range (`"easy-ping": "~0.8.1"`) if you want patches automatically and minors on
+purpose.
+
+## What is stable <a id="stable" />
+
+These do not change without the process under [How a breaking change ships](#breaking):
+
+- **`easyPing()` configuration**: `database`, `secret`, `session`, `getRecipients`,
+  `notifications`, `channels`, `delivery`, `cron`, `plugins`, `basePath`, `tablePrefix`.
+- **`send()`**: its arguments and its `{ notifications, skipped }` result.
+- **The route handler**: every documented route, its method, scope and response shape.
+- **The client**: `useNotifications` and `createNotifyClient`, their options and result.
+- **The adapter contract** (`DatabaseAdapter`) and the conformance suite that defines it, so a
+  custom adapter keeps working.
+- **The plugin contract**: `definePlugin`, its hooks, route scopes and the scoped store.
+- **The tables**: schema changes are **additive only**. A release may add a column or an index;
+  it does not rename or drop one. Every database has a tool that applies the additions
+  ([Upgrading](/docs/upgrading)).
+
+## What may still change <a id="may-change" />
+
+- **Beta features**: [React Native](/docs/react-native) and [mobile push](/docs/mobile-push) are
+  in testing, and their options may change in a minor release before they are marked stable.
+- **Tuning defaults**: poll intervals, the worker's idle time, stream caps and similar numbers
+  can be adjusted when real use shows a better value. The option names stay.
+- **Anything not documented**: exports that appear in the type definitions but on no docs page
+  are internal, even if importable.
+- **Security fixes** take priority over compatibility. 0.4.0 is the example: POSTs started
+  requiring `Content-Type: application/json` to close a CSRF hole. That was announced as breaking
+  and documented with the fix.
+
+## How a breaking change ships <a id="breaking" />
+
+1. It lands in a **minor** release, never a patch.
+2. The changeset and the [changelog](/docs/changelog) entry say **breaking** and why.
+3. [Upgrading](/docs/upgrading) gets a section for that version with the before and after.
+4. Where practical, the old form keeps working for one minor release and logs a warning naming
+   its replacement, so an upgrade does not break on day one.
+
+## Supported runtimes and databases <a id="support" />
+
+| | Supported |
+| --- | --- |
+| Node.js | 20 and later. CI checks the floor. |
+| Edge runtimes | The route handler, the client and web push use Web APIs only, so they run on Workers and Edge. Adapters need a driver that runs there. |
+| PostgreSQL | Any driver, or Drizzle on postgres.js. |
+| MySQL / MariaDB | MySQL 8; MariaDB 10.6 and later (for `SKIP LOCKED`). |
+| SQLite | `node:sqlite` (Node 22.13+) or better-sqlite3; SQLite 3.16 and later for the migration planner. |
+| MongoDB | A replica set (a single-node one is fine), for transactions and change streams. |
+| React | 18 and later, as an optional peer. |
+
+## What 1.0 means <a id="one-oh" />
+
+1.0 is the point where everything under [What is stable](#stable) is promised for the whole major
+version, with breaking changes only in 2.0. It comes when the beta features have finished testing
+and a few releases have shipped with no breaking change. Until then, this page is the promise.

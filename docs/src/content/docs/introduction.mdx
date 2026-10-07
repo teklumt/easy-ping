@@ -1,0 +1,62 @@
+export const frontmatter = {
+  title: "Introduction",
+  description:
+    "A framework-agnostic, type-safe, self-hosted notifications library for TypeScript.",
+};
+
+export const toc = [
+  { id: "what-it-is", label: "What it is" },
+  { id: "wedge", label: "The wedge" },
+  { id: "whats-built", label: "What's built" },
+  { id: "not-yet", label: "What's not built" },
+  { id: "scale", label: "Scale target" },
+];
+
+## What it is <a id="what-it-is" />
+
+Every app past the weekend-project stage needs a notification bell, transactional email, and
+user preferences. The usual options are a platform you deploy (Novu), a SaaS you rent per
+notification (Knock, Courier), a workflow tool plus your own table (Inngest + Resend), or
+hand-rolling it badly.
+
+easy-ping runs **inside your app**, stores notifications in **your database**, and never
+charges per send. It is a library, not a service. There is nothing to deploy beyond your own
+app, and no dashboard you don't own.
+
+<Note tag="One line">
+  The notification layer you own, not a service you rent.
+</Note>
+
+## The wedge <a id="wedge" />
+
+The **preference center** and the **in-app inbox** are the two things almost every team dreads
+building and builds badly. They're the first two things this library gets right, because
+everything else sits on top of them. Digests, push and retries all assume those two work.
+
+## What's built <a id="whats-built" />
+
+- The core `send()` pipeline, covering dedupe, hooks and four delivery modes over one cron sweep
+- Five database adapters (Postgres through any driver or Drizzle, MongoDB, MySQL and SQLite), all
+  held to one conformance suite with 87 passing cases between them
+- In-app inbox with cursor pagination, seen vs. read, optimistic updates, and one event stream per
+  browser so the bell updates without a timer or a socket server
+- Email via Resend, with an open provider interface
+- Web push using VAPID and aes128gcm on Web Crypto, so it runs on Workers and Edge, not only Node
+- Telegram through a bot the user connects with one tap, over a webhook or long polling
+- Native push to iOS and Android through Expo, with receipts that prune uninstalled devices (beta)
+- A React Native client entry with the same hook as the web (beta)
+- Preferences and digests plugins, each owning its own tables through a scoped store
+
+## What's not built yet <a id="not-yet" />
+
+- Batching ("5 people liked your post")
+- SMS and Slack channels. The plugin contract already supports them, and push is the existing
+  example to copy from
+- A Prisma adapter, and framework bindings beyond React (Kysely already works through
+  [`postgresAdapter`](/docs/postgres-adapter))
+
+## Scale target <a id="scale" />
+
+Thousands to low-millions of notifications per month. Not Slack-scale fan-out. That's not a
+limitation to apologize for. It's what justifies every "no queue required" decision in this
+library. If you need a message bus, you need something else.

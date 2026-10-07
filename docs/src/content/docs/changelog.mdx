@@ -1,0 +1,32 @@
+import { ReleaseCatalog } from "../../components/ReleaseCatalog";
+
+export const frontmatter = {
+  title: "Changelog",
+  description:
+    "Every release, what changed in it, and why — including the bugs worth knowing about.",
+};
+
+export const toc = [
+  { id: "catalog", label: "Releases" },
+  { id: "versioning", label: "How versions work" },
+];
+
+## Releases <a id="catalog" />
+
+<ReleaseCatalog />
+
+## How versions work <a id="versioning" />
+
+Semantic versioning, with the pre-1.0 caveat that **minor versions may still move APIs**. The
+status note on the [introduction](/docs/introduction) says which parts are settled.
+
+Every release is cut with [changesets](https://github.com/changesets/changesets), so
+`packages/easy-ping/CHANGELOG.md` in the library repo is the machine-generated record. This page
+is the human one — it exists to say *why* something changed, which a commit log never does.
+
+<Note tag="Fixes in docs count">
+  Documentation errors are listed here as fixes, not hidden. A wrong claim in the docs is a bug:
+  it sends you down the wrong path just as surely as wrong code, and with these docs it also feeds
+  the [AI prompts](/docs/ai-assistant), where a confident wrong answer propagates straight into
+  someone's codebase.
+</Note>

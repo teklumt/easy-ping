@@ -1,0 +1,106 @@
+export const frontmatter = {
+  title: "Push devices",
+  description: "The device registry behind the push channel — registration, fan-out, and pruning.",
+};
+
+export const toc = [
+  { id: "tables", label: "Creating the table" },
+  { id: "options", label: "Options" },
+  { id: "routes", label: "Routes" },
+  { id: "fanout", label: "Fan-out and pruning" },
+];
+
+This is the plugin half of web push, meaning the schema, routes and delivery logic. For the
+provider, VAPID keys and the browser side, see [Web push](/docs/web-push).
+
+<Note tag="The browser half ships too">
+  Do not hand-roll the client. `easy-ping/browser` exports `subscribeToPush`,
+  `unsubscribeFromPush` and `isPushSupported`, which register the service worker, ask for
+  permission, decode the VAPID key and POST the subscription to `/push/devices` for you.
+</Note>
+
+## Creating the table <a id="tables" />
+
+The device registry is one table (one collection on MongoDB), declared by `pushSchema`. Create it
+next to the core tables, on whichever database you use:
+
+<Tabs labels={["Postgres", "MySQL", "SQLite", "MongoDB"]}>
+<CodeBlock bare>
+
+```ts
+import { pushSchema } from "easy-ping/plugins/push";
+await createPostgresTables(query, { plugins: [pushSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { pushSchema } from "easy-ping/plugins/push";
+await createMysqlTables(query, { plugins: [pushSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { pushSchema } from "easy-ping/plugins/push";
+await createSqliteTables(query, { plugins: [pushSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { pushSchema } from "easy-ping/plugins/push";
+await createPluginIndexes(db, pushSchema);   // from "easy-ping/adapters/mongodb"; idempotent
+```
+
+</CodeBlock>
+</Tabs>
+
+## Options <a id="options" />
+
+<CodeBlock bare>
+
+```ts
+push({
+  provider,                 // a PushProvider — webPush({ subject, vapid }) is the one that ships
+  render: ({ type, payload }) => ({ title, body }),
+  staleAfterDays: 180,       // devices untouched this long are pruned on /push/prune
+  maxDevicesPerUser: 20,     // past this, the least recently seen device is evicted
+  allowedEndpointHosts: ["fcm.googleapis.com", "*.notify.windows.com"],  // optional pin
+  allowInsecureEndpoints: false,  // only for a local fake push service; never in production
+})
+```
+
+</CodeBlock>
+
+## Routes <a id="routes" />
+
+| Route | Method | Scope | Does |
+| --- | --- | --- | --- |
+| `/push/devices` | POST | user | Register (or re-register) a `PushSubscription` |
+| `/push/devices/remove` | POST | user | Unsubscribe one device by endpoint |
+| `/push/prune` | POST | machine | Force-remove stale devices outside the normal delivery-time pruning |
+
+Devices are keyed by their unique `endpoint`, not by user — the same user can have several
+(phone, laptop, a second browser), and re-registering an existing endpoint updates it in place
+rather than creating a duplicate row.
+
+Registration validates before it stores. The endpoint must be a public https URL (no loopback,
+private or link-local hosts, and only `allowedEndpointHosts` when set); `keys.p256dh` must be a
+65-byte uncompressed P-256 point and `keys.auth` 16 bytes, both base64url. Anything else is a
+400. An endpoint belongs to the account that first registered it for as long as the row exists:
+another account registering the same endpoint gets a **409**, so knowing a device's endpoint URL
+never lets anyone redirect its pushes. The `remove` route is scoped to the owner the same way.
+
+## Fan-out and pruning <a id="fanout" />
+
+A single push notification fans out to every device registered for that user, in parallel, so one
+unreachable endpoint cannot hold the others up to the runner's timeout. Delivery succeeds if
+**any** endpoint accepts it — one dead subscription among three working ones doesn't fail the
+whole send, and a throttled (429) endpoint counts as retryable, not delivered. An endpoint that
+reports itself gone (404/410), or that the provider reports as `invalid` (keys it cannot encrypt
+for), is deleted immediately rather than retried five times; an unpruned registry accumulates
+dead subscriptions forever, and every future send slows down fanning out to them for nothing.

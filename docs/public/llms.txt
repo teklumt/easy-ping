@@ -1,0 +1,67 @@
+# easy-ping
+
+> Free, open-source notifications for TypeScript. In-app inbox,
+> transactional email, web push, mobile push and Telegram. Runs inside your
+> app; stores notifications in your own Postgres, MySQL, SQLite or MongoDB
+> database. No cloud component, no per-notification billing.
+
+This library shipped after most language models' training cutoffs.
+For the full API surface an AI assistant needs to use it correctly,
+fetch /llms-full.txt from this same origin.
+
+## Docs
+
+### Getting started
+
+- Introduction: /docs/introduction
+- Quickstart: /docs/quickstart
+- Configuration: /docs/configuration
+- Use with an AI assistant: /docs/ai-assistant
+
+### Core
+
+- send(): /docs/send
+- Delivery modes: /docs/delivery-modes
+- Route handler: /docs/route-handler
+- Cron sweep: /docs/cron
+
+### Channels
+
+- In-app inbox: /docs/in-app-inbox
+- Web push: /docs/web-push
+- Email: /docs/email
+- Telegram: /docs/telegram
+- Mobile push: /docs/mobile-push
+
+### Plugins
+
+- Preferences: /docs/preferences
+- Digests: /docs/digests
+- Push devices: /docs/push-plugin
+- Writing a plugin: /docs/writing-a-plugin
+
+### Adapters
+
+- Postgres · any driver: /docs/postgres-adapter
+- Drizzle · Postgres: /docs/drizzle-adapter
+- MongoDB: /docs/mongodb-adapter
+- MySQL: /docs/mysql-adapter
+- SQLite: /docs/sqlite-adapter
+- Writing an adapter: /docs/writing-an-adapter
+
+### Guides
+
+- React Native: /docs/react-native
+- Upgrading: /docs/upgrading
+- When something fails: /docs/failures
+- Security: /docs/security
+- Stability and versioning: /docs/stability
+
+### Releases
+
+- Changelog: /docs/changelog
+
+## Source
+
+- npm: https://www.npmjs.com/package/easy-ping
+- Repository: https://github.com/teklumt/easy-ping

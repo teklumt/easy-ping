@@ -1,0 +1,90 @@
+export const frontmatter = {
+  title: "Preferences",
+  description: "A per-type, per-channel opt-out center with signed unsubscribe links, as a plugin.",
+};
+
+export const toc = [
+  { id: "enabling", label: "Enabling it" },
+  { id: "options", label: "Options" },
+  { id: "routes", label: "Routes" },
+  { id: "unsubscribe", label: "Unsubscribe links" },
+  { id: "hook", label: "usePreferences" },
+];
+
+## Enabling it <a id="enabling" />
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import { preferences } from "easy-ping/plugins/preferences";
+
+plugins: [preferences()],
+```
+
+</CodeBlock>
+
+## Options <a id="options" />
+
+<CodeBlock bare>
+
+```ts
+preferences({
+  defaultEnabled: true,        // what an absent row means
+  alwaysSend: ["securityAlert"],  // types that ignore preferences entirely
+  unsubscribeTtlSeconds: 60 * 60 * 24 * 30,  // how long an unsubscribe link stays valid
+})
+```
+
+</CodeBlock>
+
+Flip `defaultEnabled` to `false` for an opt-in-only notification type — most products want most
+types on by default, but a marketing digest usually shouldn't be.
+
+## Routes <a id="routes" />
+
+| Route | Method | Scope | Does |
+| --- | --- | --- | --- |
+| `/preferences` | GET | user | Every type/channel pair and its current state |
+| `/preferences` | POST | user | Update one pair. `type` must be a configured notification, `channel` and `frequency` valid, `enabled` a boolean — anything else is a 400 |
+| `/unsubscribe` | POST | signed | One-click opt-out from an email footer link — no session required |
+
+## Unsubscribe links <a id="unsubscribe" />
+
+Because `/unsubscribe` is session-less (the person clicking it isn't logged in, and shouldn't
+need to be), it's authenticated by a signed token embedded in the link itself rather than a
+cookie:
+
+<CodeBlock bare>
+
+```ts
+import { buildUnsubscribeToken } from "easy-ping/plugins/preferences";
+
+const token = buildUnsubscribeToken(secret, userId, "commentReply", "email");
+const link = `https://acme.dev/api/notifications/unsubscribe?token=${token}`;
+```
+
+</CodeBlock>
+
+The token expires after `unsubscribeTtlSeconds` (capped at 90 days) and is scoped to exactly one
+user/type/channel — it can't be replayed to unsubscribe someone from a different notification
+type. It also carries its issue time: if the user changed that preference *after* the email went
+out, the old link is refused with a 400 rather than silently undoing a newer decision made while
+logged in. Clicking the same link twice is still a 200, which one-click mail clients rely on.
+This is what the `updatedAt` column on `notification_preference` is for; see
+[Upgrading](/docs/upgrading) if you are coming from 0.3.0.
+
+## usePreferences <a id="hook" />
+
+<CodeBlock bare>
+
+```ts
+import { usePreferences } from "easy-ping/plugins/preferences/react";
+
+const { preferences, isEnabled, setEnabled, setFrequency, isLoading } = usePreferences();
+```
+
+</CodeBlock>
+
+Headless, like `useNotifications` — state and persistence only. `isEnabled({ type, channel })`
+resolves against `defaultEnabled` for any pair with no stored row, so the UI never has to special-
+case "the user hasn't visited this settings page yet."

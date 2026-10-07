@@ -1,0 +1,105 @@
+export const frontmatter = {
+  title: "Upgrading",
+  description: "What happens to your schema when a new version adds a column, on each database path.",
+};
+
+export const toc = [
+  { id: "v0100", label: "0.9 to 0.10" },
+  { id: "v040", label: "0.3.0 to 0.4.0" },
+  { id: "paths", label: "Which path you're on" },
+  { id: "postgres", label: "planPostgresMigration" },
+  { id: "guarantees", label: "What it will and won't do" },
+];
+
+## 0.9 to 0.10 <a id="v0100" />
+
+No schema change. Two behaviour changes, both closing a hole from the 0.9.0 security review:
+
+1. **Rate limiting without proxy headers.** If you set `rateLimit` without a `key`, it keys on
+   `cf-connecting-ip`, `x-real-ip` or `x-forwarded-for`. Before 0.10, a request with none of them
+   was **not limited at all**; now all such requests share **one bucket**, and the log says so once:
+   `rateLimit: a request arrived with no ... header`. If you see that line, your limiter was off
+   until now and is now global. Fix it one of two ways:
+   - put the app behind a proxy that sets one of those headers (Vercel, Cloudflare and most load
+     balancers do), or
+   - pass your own key: `rateLimit: { max, windowMs, key: (request) => sessionIdFrom(request) }`.
+
+   A `key` function that returns `null` still exempts the request, so health-check exemptions keep
+   working.
+2. **Empty user ids.** `session.getUserId` returning `""` (or anything that is not a non-empty
+   string) is now a 401, with a warning logged once. If your helper does
+   `session?.user?.id ?? ""`, anonymous requests were all sharing one user's inbox; change it to
+   `?? null`.
+
+Smaller changes that only affect code that was already wrong: a plugin route that reuses a core
+route's path is now a startup error; a plugin store `update` or `remove` with `{}` throws; asking
+for a new Telegram link code retires the previous one.
+
+## 0.3.0 to 0.4.0 <a id="v040" />
+
+Four things to do, in this order:
+
+1. **Secrets.** `secret` and `cron.secret` must be at least 16 characters and not a placeholder,
+   or startup throws. Generate real ones before deploying.
+2. **Schema.** `notification_preference` gains `updated_at`. `planPostgresMigration` emits the
+   `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` for it (verified against a 0.3.0-shaped table);
+   `drizzle-kit` diffs it; MongoDB needs nothing. Rows written before the upgrade have no value
+   until they are next saved, so the unsubscribe freshness check does not apply to them yet.
+3. **Tokens.** Signing keys are now derived per purpose, so **every token issued by 0.3.0 stops
+   verifying**. Unsubscribe links in already-sent email will return 400; re-issue them.
+4. **Plugins and clients.** `PluginInitContext.secret` is gone; use `ctx.sign()`. Any client that
+   POSTs without `Content-Type: application/json`, or from another origin, now gets 415 or 403.
+   The shipped clients already send both correctly; add `trustedOrigins` if your API lives on a
+   different origin from the page.
+
+## Which path you're on <a id="paths" />
+
+| You bootstrapped with | To upgrade |
+| --- | --- |
+| `createSchema()` + `drizzle-kit` | `drizzle-kit` diffs the core tables for you. Regenerate the plugin file with `renderDrizzleSchema` first ([Drizzle](/docs/drizzle-adapter#plugins)), then run `drizzle-kit` |
+| `createPostgresTables()` or `renderPostgresDdl()` | `planPostgresMigration()` for `coreSchema` and each plugin schema — see below |
+| `createMysqlTables()` | `planMysqlMigration()` per core and plugin schema — see the [MySQL page](/docs/mysql-adapter#upgrading) |
+| `createSqliteTables()` | `planSqliteMigration()` per core and plugin schema, in one transaction — see the [SQLite page](/docs/sqlite-adapter#upgrading) |
+| `createMongoIndexes()` + `createPluginIndexes()` | Rerun both. `createIndex` is idempotent and additive. |
+
+**`renderPostgresDdl` cannot upgrade you.** It emits `CREATE TABLE IF NOT EXISTS`, correct exactly
+once. Rerunning it on an existing database does nothing at all — a version that adds a column
+would otherwise leave that column silently missing until something hits it at runtime.
+
+## planPostgresMigration <a id="postgres" />
+
+<CodeBlock bare>
+
+```ts
+import { INTROSPECT_SQL, planPostgresMigration, coreSchema } from "easy-ping/schema";
+
+const plan = await planPostgresMigration(
+  async () =>
+    (await sql.unsafe(INTROSPECT_SQL)).map((row) => ({
+      table: row.table_name,
+      column: row.column_name,
+      type: row.data_type,
+      nullable: row.is_nullable === "YES",
+    })),
+  coreSchema,
+);
+
+for (const statement of plan.statements) await sql.unsafe(statement);
+if (plan.unsupported.length) console.warn(plan.unsupported);
+```
+
+</CodeBlock>
+
+It introspects the live schema, diffs it against the declaration, and emits only what's missing.
+Run the same call for any plugin's schema too — `push({...}).schema`, `preferences().schema`.
+
+## What it will and won't do <a id="guarantees" />
+
+**Additive only, deliberately.** It adds missing columns and indexes, and creates tables that
+don't exist yet. It never drops a column, never changes a type, and never touches a column it
+doesn't declare — each of those lands in `plan.unsupported` as a message for a human, because
+they're destructive and context-dependent in ways a generic tool shouldn't guess at.
+
+One behavior worth knowing before you run it against a populated table: a **required** field with
+no default is added **nullable**, because `NOT NULL` would abort against existing rows. That case
+is also reported in `unsupported` — backfill the column, then `ALTER ... SET NOT NULL` yourself.

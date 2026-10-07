@@ -1,0 +1,90 @@
+export const frontmatter = {
+  title: "Email",
+  description: "A Resend provider ships in the box; the EmailProvider interface is open for any other service.",
+};
+
+export const toc = [
+  { id: "resend", label: "Using Resend" },
+  { id: "templates", label: "Subject and template" },
+  { id: "custom", label: "A different provider" },
+];
+
+## Using Resend <a id="resend" />
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import { resend } from "easy-ping/providers/resend";
+
+channels: {
+  email: { provider: resend({ apiKey: process.env.RESEND_API_KEY!, from: "Acme <hi@acme.dev>" }) },
+},
+```
+
+</CodeBlock>
+
+It's a plain `fetch` call to Resend's API — no SDK dependency. `Idempotency-Key` is set from the
+delivery id on every request, so a retried send can never land twice on Resend's side even if the
+retry and the original both eventually succeed.
+
+Failures are classified for you: a 401/403 (bad key) or 422 (invalid recipient) is never retried;
+a 408/429/5xx is. That split is what keeps a revoked API key from burning all five retry attempts
+on something that will never succeed.
+
+## Subject and template <a id="templates" />
+
+Declared per notification type, not per provider — the same values work if you swap providers
+later:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+commentReply: defineNotification({
+  schema: z.object({ authorName: z.string(), commentId: z.string() }),
+  channels: ["email"],
+  email: {
+    subject: (payload) => `${payload.authorName} replied to you`,
+    template: (payload) =>
+      `<p>${escapeHtml(payload.authorName)} replied. <a href="/c/${encodeURIComponent(payload.commentId)}">View</a></p>`,
+  },
+}),
+```
+
+</CodeBlock>
+
+Both functions receive the same typed `payload` your `schema` validates — no separate templating
+data model to keep in sync.
+
+<Note tag="Escape user input">
+  `template` output is sent exactly as returned. Anything a user typed — a display name, a comment
+  excerpt — goes through `escapeHtml` (exported from `easy-ping`), or that user's HTML lands in
+  someone's inbox from your sending domain. react-email and similar renderers escape for you.
+</Note>
+
+## A different provider <a id="custom" />
+
+`EmailProvider` is a small interface: a `name`, a `send(message)`, and an `isRetryable(error)`.
+Anything that can make an HTTP request to your email service qualifies:
+
+<CodeBlock bare>
+
+```ts
+type EmailProvider = {
+  name: string;
+  timeoutMs?: number;
+  send(message: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+    idempotencyKey: string;
+    signal?: AbortSignal;
+  }): Promise<{ providerMessageId?: string }>;
+  isRetryable?(error: unknown): boolean;
+};
+```
+
+</CodeBlock>
+
+`idempotencyKey` and `signal` are handed to you already computed — pass them straight through if
+your provider's API accepts an idempotency header and request cancellation, respectively.
