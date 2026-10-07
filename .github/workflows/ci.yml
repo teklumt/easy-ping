@@ -38,9 +38,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The published package's own dependency graph. The examples are audited
-      # separately and are allowed to lag; consumers never install them.
-      - run: pnpm --filter easy-ping audit --prod --audit-level high
+      # pnpm audit ignores --filter and reads the whole lockfile, so this also covers the
+      # examples. --ignore-unfixable skips advisories with no patched version yet; once one
+      # ships, pnpm stops treating it as unfixable and this starts failing on it again.
+      - run: pnpm --filter easy-ping audit --prod --audit-level high --ignore-unfixable
 
       - run: pnpm lint
       - run: pnpm typecheck
