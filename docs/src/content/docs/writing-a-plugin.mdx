@@ -1,0 +1,150 @@
+export const frontmatter = {
+  title: "Writing a plugin",
+  description: "The surface preferences, digests and push are all built on — hooks, scoped storage, and a channel of your own.",
+};
+
+export const toc = [
+  { id: "shape", label: "The plugin shape" },
+  { id: "hooks", label: "Hooks, and the fail-open/closed rule" },
+  { id: "storage", label: "Scoped storage" },
+  { id: "channel", label: "Adding a channel" },
+  { id: "routes", label: "Routes and scope" },
+];
+
+## The plugin shape <a id="shape" />
+
+<CodeBlock bare>
+
+```ts
+definePlugin({
+  id: "my-plugin",
+  dependsOn: ["preferences"],   // optional — resolves init order
+  schema: { ... },              // tables this plugin owns
+  hooks: { ... },
+  channels: ["sms"],            // channels this plugin can deliver
+  routes: [ ... ],
+  init: (ctx) => { /* runs once, before any hook or route */ },
+});
+```
+
+</CodeBlock>
+
+`definePlugin` is an identity function — it exists purely so TypeScript infers the plugin's own
+id and schema types without you writing them out twice.
+
+## Hooks, and the fail-open/closed rule <a id="hooks" />
+
+<CodeBlock bare>
+
+```ts
+hooks: {
+  prepare,          // once per send(), for bulk loading — avoids an N+1 per recipient
+  beforeSend,       // can veto or modify the send
+  resolveChannels,  // decides which channels actually fire
+  afterSend,        // once the rows are committed — the only hook that sees notification ids
+  deliver,          // implements delivery for a channel this plugin declares
+  afterDeliver,     // observes the outcome of a delivery attempt
+}
+```
+
+</CodeBlock>
+
+<Note tag="This is the one to get right">
+  `beforeSend` and `resolveChannels` **fail closed** — a thrown error blocks the send. `afterSend`
+  and `afterDeliver` **fail open** — a thrown error is logged and delivery proceeds anyway. Get
+  this backwards and either a bug in an unrelated plugin blocks every notification in the app, or
+  a broken observability hook silently hides real delivery failures. The asymmetry is intentional:
+  a decision hook's whole job is to be trusted; an observation hook's failure should never be
+  allowed to look like a successful delivery.
+</Note>
+
+## Scoped storage <a id="storage" />
+
+A plugin declares its own tables in `schema()` and reaches them through a store that validates
+every table and column against that declaration — a plugin can never accidentally (or otherwise)
+read the core `notification` table it didn't declare:
+
+<CodeBlock bare>
+
+```ts
+init: (ctx) => {
+  store = ctx.store;
+  // ctx also carries: sign, logger, notificationTypes, getRecipients, send
+},
+
+// later, inside a hook:
+await store.insert("myTable", [{ id, userId, ... }]);
+await store.find("myTable", { userId });
+```
+
+</CodeBlock>
+
+Two guards apply to every write. `update` and `remove` refuse an empty `where` (`{}` would touch
+every row), so a typo cannot wipe a table. And a table declared with `readOnly: true` can be read
+but never written, which is how a plugin reads a neighbour's table without being able to change it:
+the digests plugin declares the preferences table that way.
+
+A plugin route cannot reuse a core route's method and path (`GET /`, `POST /read`, `GET /events`,
+`POST /cron` and the rest); `easyPing()` refuses to start if one does.
+
+The store checks values as well as names: a where-clause value must be a scalar or a single
+recognised operator (`in`, `lt`, `lte`, `gt`, `gte`, `not`), so a request body forwarded straight
+into a query cannot smuggle a Mongo operator through. Validate bodies in the route anyway —
+`readJsonBody(request)` from `easy-ping` parses with a size cap — and check `typeof` before
+querying.
+
+A plugin never receives `secret`. `ctx.sign({ uid, purpose, data?, ttlSeconds? })` mints a token,
+and only for a `purpose` one of the plugin's own `signed` routes declares; anything else throws.
+`ctx.notificationTypes` lists the configured notification names, for routes that store rows per
+type and should refuse ones that do not exist.
+
+This is also how the same plugin code runs unmodified on Postgres and MongoDB: the store
+translates field names and JSON serialization per adapter, so a plugin author never writes
+dialect-specific code. See [Writing an adapter](/docs/writing-an-adapter) for the other side of
+that boundary.
+
+## Adding a channel <a id="channel" />
+
+A plugin can carry a channel the core doesn't know about by declaring it in `channels` and
+implementing `deliver` — this is exactly how push works, and the pattern for sms or slack:
+
+<CodeBlock bare>
+
+```ts
+channels: ["sms"],
+hooks: {
+  deliver: async ({ channel, notification, recipient }) => {
+    if (channel !== "sms") return { result: "skipped" };
+    // call your SMS provider, return { result: "sent" } or
+    // { result: "failed", error, retryable }
+  },
+},
+```
+
+</CodeBlock>
+
+## Routes and scope <a id="routes" />
+
+<CodeBlock bare>
+
+```ts
+routes: [
+  {
+    path: "/my-plugin/thing",
+    method: "POST",
+    scope: { type: "user" },  // | { type: "machine" } | { type: "signed", purpose }
+                              // | { type: "custom", justification }
+    handler: async ({ request, userId }) => Response.json({ ok: true }),
+  },
+],
+```
+
+</CodeBlock>
+
+`user`-scoped POSTs get the handler's CSRF checks for free; `machine` routes are guarded by
+`machineSecret` (or `cron.secret`); `signed` routes receive verified `claims`. A `custom` route
+does its own auth and must say why — the justification is printed in a startup warning and in
+`notify.listRoutes()`, so the exception stays visible.
+
+See [Route handler](/docs/route-handler) for what each scope actually enforces before your
+handler runs.

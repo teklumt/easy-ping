@@ -1,0 +1,63 @@
+export const frontmatter = {
+  title: "When something fails",
+  description: "Delivery is quiet by design. Here's how to see what actually happened.",
+};
+
+export const toc = [
+  { id: "why-quiet", label: "Why failures are quiet" },
+  { id: "getFailedDeliveries", label: "getFailedDeliveries" },
+  { id: "healthcheck", label: "healthCheck" },
+  { id: "backoff", label: "The retry schedule" },
+];
+
+## Why failures are quiet <a id="why-quiet" />
+
+At-least-once delivery with five attempts and backoff means a transient failure resolves itself
+without anyone noticing — which also means a **permanent** failure (a revoked API key, say) can
+sit unnoticed exactly the same way, unless you go looking for it.
+
+## getFailedDeliveries <a id="getFailedDeliveries" />
+
+<CodeBlock bare>
+
+```ts
+const failed = await notify.getFailedDeliveries({
+  since: new Date(Date.now() - 24 * 3600_000),  // defaults to the last 24 hours
+  limit: 100,                                    // defaults to 100, capped at 1000
+});
+
+// [{ id, notificationId, channel, attempts, maxAttempts, lastError, updatedAt, ... }]
+```
+
+</CodeBlock>
+
+Wire this into an admin page or an alert. Without it, the retry machinery is a black box, and a
+revoked API key looks exactly like nothing happening at all.
+
+<Note tag="Skipped is not failed">
+  A delivery with nothing to do, such as push for someone who never registered a device, is
+  recorded as `skipped` and never appears here. That distinction is the point: in an app where
+  push is opt-in, counting opt-outs as failures would bury every real failure among them.
+</Note>
+
+## healthCheck <a id="healthcheck" />
+
+<CodeBlock bare>
+
+```ts
+const report = await notify.healthCheck();
+// { mode, cronMounted, cronRequiredButMissing, warnings }
+```
+
+</CodeBlock>
+
+`cronRequiredButMissing` is `true` when `delivery.mode` needs the `/cron` sweep (`"cron"` or
+`"deferred"`) but `cron.secret` was never configured — the most common way a fresh setup silently
+never delivers anything.
+
+## The retry schedule <a id="backoff" />
+
+Exponential backoff with jitter, five attempts by default: 30s → 2m → 8m → 32m, floored by your
+cron interval (see [Cron sweep](/docs/cron)). A provider marks its own errors retryable or not —
+timeouts and rate limits retry; a revoked key or an invalid recipient goes straight to `failed`
+rather than burning all five attempts on something that will never succeed.

@@ -1,0 +1,97 @@
+export const frontmatter = {
+  title: "send()",
+  description:
+    "The one function that starts a notification. It commits the rows first, and what it waits for after that is the delivery mode's call.",
+};
+
+export const toc = [
+  { id: "signature", label: "Signature" },
+  { id: "params", label: "Arguments" },
+  { id: "result", label: "Return value" },
+  { id: "dedupe", label: "dedupeKey" },
+  { id: "blocking", label: "What it waits for" },
+];
+
+## Signature <a id="signature" />
+
+<CodeBlock bare>
+
+```ts
+await notify.send("commentReply", {
+  to: threadOwnerId,
+  payload: { authorName: "Dana", commentId: "c_123" },
+});
+```
+
+</CodeBlock>
+
+The first argument is a key of your `notifications` config; the second argument's `payload` shape
+is inferred from that notification's `schema`, so a typo in a field name is a compile error, not
+a runtime one.
+
+## Arguments <a id="params" />
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `to` | `string \| readonly string[]` | yes | One user id, or several — `getRecipients` is still called once, batched. |
+| `payload` | inferred from `schema` | yes | Validated before anything is written. |
+| `actorId` | `string` | no | Who caused this, if different from the recipient. Not delivered anywhere by default; a plugin or template can read it. |
+| `dedupeKey` | `string` | no | See below. |
+| `overrides.channels` | `readonly Channel[]` | no | Forces which channels fire for this one call, bypassing the notification's configured `channels`. |
+
+## Return value <a id="result" />
+
+<CodeBlock bare>
+
+```ts
+{
+  notifications: [
+    { id: "n_...", userId: "u_...", deliveries: [{ id: "d_...", channel: "inApp" }, ...] },
+  ],
+  skipped: [
+    { userId: "u_...", reason: "deduped" | "no-channels" | "channel-unavailable" | "..." },
+  ],
+}
+```
+
+</CodeBlock>
+
+A recipient lands in `notifications` or in `skipped` — never both, and never silently dropped.
+`skipped` is why the return value is worth checking: `"channel-unavailable"` means a channel is
+configured but nothing can deliver it (a warning also fires at startup), which is deliberately
+distinct from `"no-channels"` so a missing provider never reads the same as a user's opt-out.
+
+## dedupeKey <a id="dedupe" />
+
+Omit it and a retried `send()` call — your own retry logic, a double form submission, a queue
+redelivery — creates a second notification. Supply a stable key and the second attempt is
+reported in `skipped` with reason `"deduped"` instead:
+
+<CodeBlock bare>
+
+```ts
+dedupeKey: `commentReply:c_123:${threadOwnerId}`,
+```
+
+</CodeBlock>
+
+Uniqueness is per user, not global — the same key for two different recipients is not a
+collision. Notifications with no `dedupeKey` never collide with each other, including with
+themselves: sending the same payload three times with no key produces three notifications.
+
+## What it waits for <a id="blocking" />
+
+`send()` validates, resolves recipients, runs hooks, and writes the notification and delivery
+rows in one transaction. Committing those rows is the only work it strictly has to do — a
+300&thinsp;ms provider round trip has no business sitting on a comment POST.
+
+Whether it waits for anything beyond that is `delivery.mode`'s call:
+
+- **`deferred`, `worker`, `cron`** — `send()` returns as soon as the rows are committed. It never
+  waits for Resend, a push service, or anything else with network latency.
+- **`inline`** — the exception. `send()` awaits that send's own deliveries before resolving, so
+  the provider round trip *is* on your request. That's the cost of the simplest possible setup,
+  and why `inline` suits a demo or a low-traffic app rather than a hot path.
+
+Either way the rows are committed first, so a provider failure costs a retry, never the
+notification. See [Delivery modes](/docs/delivery-modes).

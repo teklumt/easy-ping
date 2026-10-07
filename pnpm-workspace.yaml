@@ -5,13 +5,14 @@ packages:
   # contributor the native toolchain for a package that cannot even build outside Expo.
   - "!examples/expo"
   - "demo-app"
+  - "docs"
 allowBuilds:
   esbuild: true
   # Next's optional image optimiser. The example is typechecked, never run,
   # so its native binary is dead weight.
   sharp: false
 
-auditConfig: { ignoreGhsas: null }
+auditConfig: {}
 
 # Next pins an old postcss with four open advisories (map-file disclosure). 8.5.x is API-compatible.
 overrides:

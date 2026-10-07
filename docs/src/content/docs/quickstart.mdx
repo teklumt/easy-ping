@@ -1,0 +1,171 @@
+export const frontmatter = {
+  title: "Quickstart",
+  description:
+    "A working inbox, email and push in five files. This walks the Postgres and Drizzle path. MongoDB differs only in step 2.",
+};
+
+export const toc = [
+  { id: "s1", label: "1 · Create the tables" },
+  { id: "s2", label: "2 · Configure" },
+  { id: "s3", label: "3 · Mount the endpoints" },
+  { id: "s4", label: "4 · Send" },
+  { id: "s5", label: "5 · Render the bell" },
+  { id: "s6", label: "6 · Wire the cron" },
+];
+
+## 1 · Create the tables <a id="s1" />
+
+The library owns four tables and never touches your user table. It references user ids instead.
+
+<Tabs labels={["Drizzle", "Raw SQL", "MongoDB"]}>
+
+<CodeBlock bare>
+
+```ts
+// db/schema.ts
+import { createSchema } from "easy-ping/adapters/drizzle";
+
+export const { notification, notificationDelivery, notificationPreference } =
+  createSchema();
+```
+
+</CodeBlock>
+
+<CodeBlock bare>
+
+```ts
+import { coreSchema, renderPostgresDdl } from "easy-ping/schema";
+
+for (const statement of renderPostgresDdl(coreSchema)) {
+  await sql.unsafe(statement);
+}
+```
+
+</CodeBlock>
+
+<CodeBlock bare>
+
+```ts
+import { createMongoIndexes } from "easy-ping/adapters/mongodb";
+
+// No tables, only indexes, including the partial unique index that makes
+// dedupe work correctly. Run once at startup.
+await createMongoIndexes(db);
+```
+
+</CodeBlock>
+
+</Tabs>
+
+Push the Drizzle schema with `drizzle-kit`. On Postgres via raw SQL, read
+[Upgrading](/docs/upgrading) before you rely on `renderPostgresDdl` past the first deploy. It
+only creates tables, it does not migrate them.
+
+## 2 · Configure <a id="s2" />
+
+Two things are yours and can't be guessed. How a request identifies its user, and how a user id
+becomes an email address.
+
+<CodeBlock title="notify.ts">
+
+```bash
+export const notify = easyPing({
+  database: drizzleAdapter(db),
+  secret: process.env.NOTIFY_SECRET!,
+
+  // Required. These endpoints serve a user's private inbox.
+  session: {
+    getUserId: async (request) =>
+      (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
+  },
+
+  // Batched. One call per send, never one per recipient.
+  getRecipients: async (userIds) => lookupUsers(userIds),
+
+  channels: {
+    inApp: { enabled: true },
+    email: { provider: resend({ apiKey: process.env.RESEND_API_KEY! }) },
+  },
+
+  notifications: {
+    commentReply: defineNotification({
+      schema: z.object({ authorName: z.string(), commentId: z.string() }),
+      channels: ["inApp", "email"],
+    }),
+  },
+});
+```
+
+</CodeBlock>
+
+<Note tag="Heads up">
+  `session.getUserId` is not optional. The mounted routes return one person's private inbox, so a
+  client-supplied user id can never be trusted.
+</Note>
+
+See [Configuration](/docs/configuration) for the full option reference.
+
+## 3 · Mount the endpoints <a id="s3" />
+
+One line gives you the whole inbox API. Plugins add their own routes to the same mount.
+
+<CodeBlock title="app/api/notifications/[[...notify]]/route.ts">
+
+```bash
+export const { GET, POST } = notify.handler;
+```
+
+</CodeBlock>
+
+| Route | Method | Does |
+| --- | --- | --- |
+| `/` | GET | Paginated feed, cursor-based. Carries `unseenCount` on the first page |
+| `/count` | GET | Unseen badge count, as `{ unseen }` |
+| `/seen` | POST | Clears the badge |
+| `/read` | POST | Marks items read, idempotently |
+| `/cron` | POST | The delivery sweep. Bearer-authenticated. |
+
+## 4 · Send <a id="s4" />
+
+Payload is typed against the schema you declared, so a rename fails at build rather than in
+production.
+
+<CodeBlock title="wherever the event happens">
+
+```ts
+await notify.send("commentReply", {
+  to: threadOwnerId,
+  payload: { authorName: "Dana", commentId: "c_123" },
+});
+```
+
+</CodeBlock>
+
+## 5 · Render the bell <a id="s5" />
+
+The hook is headless. It keeps itself fresh over a server-sent event stream (one per browser, polling as the fallback), handles cursor pagination and optimistic updates, and holds no opinion about your markup.
+
+<CodeBlock title="components/Bell.tsx">
+
+```ts
+const { notifications, unseenCount, markAsRead, markSeen } = useNotifications();
+```
+
+</CodeBlock>
+
+**Seen and read are different states.** Opening the dropdown clears the badge, but an item stays
+bold until it is actually clicked. See [In-app inbox](/docs/in-app-inbox).
+
+## 6 · Wire the cron <a id="s6" />
+
+Every 1–5 minutes, from Vercel Cron, GitHub Actions, or anything that can POST. This is the
+durability floor beneath every delivery mode, as [Delivery modes](/docs/delivery-modes) explains.
+
+<CodeBlock title="any scheduler">
+
+```ts
+POST /api/notifications/cron
+Authorization: Bearer $NOTIFY_CRON_SECRET
+```
+
+</CodeBlock>

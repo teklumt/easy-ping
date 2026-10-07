@@ -1,0 +1,100 @@
+export const frontmatter = {
+  title: "Route handler",
+  description: "One export mounts the whole inbox API, plus whatever routes your plugins add.",
+};
+
+export const toc = [
+  { id: "mounting", label: "Mounting it" },
+  { id: "core-routes", label: "Core routes" },
+  { id: "auth", label: "How auth works per route" },
+  { id: "node", label: "Outside the fetch API" },
+];
+
+## Mounting it <a id="mounting" />
+
+`notify.handler` exposes `GET`, `POST`, and a method-agnostic `handle` for frameworks that don't
+separate by verb:
+
+<CodeBlock title="app/api/notifications/[[...notify]]/route.ts">
+
+```bash
+export const { GET, POST } = notify.handler;
+```
+
+</CodeBlock>
+
+<Note tag="Double brackets">
+  `[[...notify]]`, not `[...notify]`. Next's required catch-all does not match the bare
+  `/api/notifications` path, and that is where the feed lives. A single-bracket mount leaves the
+  bell showing an empty list against a 404 while `/count` keeps working, which reads as a broken
+  inbox rather than a wrong route.
+</Note>
+
+Every route below, core and plugin-added alike, lives under whatever path prefix you mount this
+at.
+The client (`createNotifyClient` / `useNotifications`) takes that same `baseUrl`.
+
+## Core routes <a id="core-routes" />
+
+| Route | Method | Scope | Does |
+| --- | --- | --- | --- |
+| `/` | GET | user | Paginated feed, newest first. Carries `unseenCount` on the first page |
+| `/count` | GET | user | Unseen badge count, as `{ unseen }` |
+| `/seen` | POST | user | Marks everything up to now as seen — clears the badge |
+| `/read` | POST | user | Marks specific ids read, by array. Idempotent: re-marking a read item still returns success. |
+| `/read-all` | POST | user | Marks every unread notification read |
+| `/events` | GET | user | Server-sent events: `ready` once, `changed` whenever this user's inbox moves. No payload; the client refetches. Removed by `events: false` |
+| `/cron` | POST | machine | The delivery sweep. Bearer-authenticated with `cron.secret`; runs at most `cron.maxSweeps` sweeps. |
+
+Plugins add their own — `/preferences`, `/unsubscribe`, `/push/devices`, `/digests/cron` — under
+the same mount. See each plugin's own page for its routes.
+
+## How auth works per route <a id="auth" />
+
+Every route declares a `scope`, and the handler enforces it before your code ever runs:
+
+- **`user`** — resolved via your `session.getUserId`. A `null` return is a 401; a client-supplied
+  user id in the request body or query string is never trusted for this scope.
+- **`machine`** — a bearer token compared in constant time against `cron.secret` for `/cron`,
+  and against `machineSecret` (falling back to `cron.secret`) for plugin routes. No user session
+  involved; this is for a scheduler, not a browser.
+- **`signed`** — a short-lived HMAC token with a `purpose`, verified against a key derived from
+  `secret` for that purpose. This is how unsubscribe links work without a cookie: the link itself
+  carries the proof.
+
+Before any `user`-scoped POST runs, the handler also requires `Content-Type: application/json`
+(415) and, if an `Origin` header is present, that it matches the request host or
+`trustedOrigins` (403). Bodies over `maxBodyBytes` are 413. Every response is
+`Cache-Control: private, no-store` with `nosniff`. `notify.listRoutes()` returns the full table
+above plus every plugin route, with its scope and owner.
+
+A plugin route never has to remember to check any of this — the scope declaration is enforced
+before the handler function runs, and `RouteContext` hands it the already-resolved `userId` or
+verified `claims`.
+
+## Outside the fetch API <a id="node" />
+
+`toNodeHandler` streams the response body chunk by chunk (so `GET /events` stays open and every
+event reaches the browser as it is produced) and aborts the web `Request` when the client
+disconnects, which is what closes the stream's subscription on the server.
+
+
+`notify.handler.handle` takes and returns a standard `Request`/`Response`, which is what Next.js,
+Hono, and most modern frameworks expect natively. For a plain Node `http` server, adapt it:
+
+<CodeBlock title="server.ts" bare={false}>
+
+```ts
+import { toNodeHandler } from "easy-ping/node";
+
+const notifyHandler = toNodeHandler(notify.handler.handle, {
+  maxBodyBytes: 64 * 1024, // default; enforced on the raw stream, so body-parser limits do not matter
+  onError: (error) => log.error(error), // the response is already a 500
+});
+// notifyHandler(req, res) — an ordinary (IncomingMessage, ServerResponse) handler
+```
+
+</CodeBlock>
+
+A thrown handler error is answered with a 500 and swallowed after `onError`. Rethrowing, as
+earlier versions did, became an unhandled rejection under Express and took the process down.

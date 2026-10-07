@@ -1,0 +1,66 @@
+export const frontmatter = {
+  title: "Digests",
+  description: "Timezone-aware batching for anyone who set their notification frequency to daily or weekly.",
+};
+
+export const toc = [
+  { id: "enabling", label: "Enabling it" },
+  { id: "options", label: "Options" },
+  { id: "how", label: "How a digest gets composed" },
+  { id: "dependency", label: "Why it depends on preferences" },
+];
+
+## Enabling it <a id="enabling" />
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import { digests } from "easy-ping/plugins/digests";
+
+plugins: [preferences(), digests()],
+```
+
+</CodeBlock>
+
+The order in that array doesn't matter at runtime — `digests` declares `dependsOn: ["preferences"]`
+and the library resolves initialization order from that, not from array position. It does need
+`preferences` present, though; digests without a frequency to read has nothing to batch by.
+
+## Options <a id="options" />
+
+<CodeBlock bare>
+
+```ts
+digests({
+  digestType: "digest",   // the notification type the composed digest sends as
+  sendHour: 9,             // local hour at which a daily digest becomes due
+  sendWeekday: 1,          // weekly digests only; 0 = Sunday
+  channel: "email",        // the only channel that makes sense today
+  maxUsersPerRun: 500,     // safety valve on one cron sweep
+})
+```
+
+</CodeBlock>
+
+`digestType` is a notification type you define yourself, with an email template that expects an
+`items` array in its payload — the plugin composes that payload for you from everything that
+accumulated.
+
+## How a digest gets composed <a id="how" />
+
+1. A user sets a notification type's frequency to `"daily"` or `"weekly"` via the preferences
+   plugin.
+2. Every matching `send()` for that user and type gets deferred into a bucket instead of firing
+   immediately — this happens transparently, in `afterSend`.
+3. The `/digests/cron` route (hourly — see [Cron sweep](/docs/cron)) checks whose local time has
+   crossed `sendHour` in their own timezone (from `getRecipients`), composes one notification of
+   type `digestType` per due user, and sends it through the normal pipeline — so digests get
+   retry and backoff for free, same as anything else.
+
+## Why it depends on preferences <a id="dependency" />
+
+The frequency a digest respects — `"instant"` vs. `"daily"` vs. `"weekly"` — is preference state,
+not digest state. Rather than duplicating that storage, `digests` reads it through the
+`preferences` plugin's own store. This is also the pattern to copy if you're
+[writing a plugin](/docs/writing-a-plugin) that needs another plugin's data: declare `dependsOn`,
+don't reimplement the table.

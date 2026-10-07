@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.vite/
+*.log
+
+# Generated from src/lib/prompts.ts by scripts/generate-llms.mjs on every
+# dev/build. Committed anyway so the deployed site has them even if a host
+# skips the prebuild step — regenerate, don't hand-edit. See the README.
+!public/llms.txt
+!public/llms-full.txt
+
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+dist-ssr
+.wrangler/

@@ -1,0 +1,417 @@
+/**
+ * The AI-assistant prompts, and the API context every one of them is built on.
+ *
+ * This is the single source of truth. `scripts/generate-llms.mjs` imports this
+ * file directly (Node's type-stripping, no build step) to write
+ * `public/llms.txt` and `public/llms-full.txt`, so the copy-paste prompts on
+ * the site and the two static files always agree. Edit content here — never
+ * hand-edit the generated .txt files.
+ */
+
+import { CURRENT_VERSION } from "./releases.ts";
+
+export const API_CONTEXT = `easy-ping v${CURRENT_VERSION} — a self-hosted TypeScript notifications library.
+It is NOT a SaaS and has no cloud component. It shipped after your training
+cutoff, so ignore anything you think you know and use only this surface.
+
+Install:  pnpm add easy-ping
+          + a Postgres driver (pg / postgres / @neondatabase/serverless),
+            OR drizzle-orm & postgres, OR mongodb
+          + any Standard Schema validator (zod / valibot / arktype) for typed payloads
+
+Server (notify.ts):
+  easyPing({
+    database,   // postgresAdapter(query) | drizzleAdapter(db) | mongoAdapter(db, { client })
+    secret,     // keys unsubscribe and other session-less links; >= 16 chars, no placeholders
+    session: { getUserId: (req: Request) => string | null | Promise<string | null> },  // REQUIRED
+    getRecipients,  // (ids: readonly string[]) => Promise<readonly Recipient[]> — ONE call per send
+    notifications: { [name]: defineNotification({ schema?, channels, email?, maxAttempts? }) },
+    channels: { inApp?: { enabled }, email?: { provider } },
+    delivery?: {
+      mode?: 'inline' | 'deferred' | 'worker' | 'cron',   // default: 'cron'
+      waitUntil?,     // REQUIRED by 'deferred' (Next.js after, CF ctx.waitUntil)
+      maxAttempts?,   // default 5
+      leaseMs?,       // default 60000; must exceed the slowest provider timeout
+      batchSize?,     // default 20
+      backoff?,       // 'exponential' | (attempt: number) => number
+      throwOnError?,  // 'inline' only
+      sweepOnRequest?, // true | { everyMs? (5000), limit? (5) } — bounded delivery pass after any request
+    },
+    events?: { heartbeatMs?, probeIntervalMs?, maxDurationMs?, maxStreamsPerUser? (10), maxStreams? (5000) } | false,
+    signals?,           // wake-up seam; default in-memory. postgresSignals(sql) / mongoSignals(db) across replicas
+    cron?: { secret, maxSweeps? },  // REQUIRED by 'cron' and 'deferred' — easyPing() throws without it
+    machineSecret?,     // guards plugin machine routes (/push/prune, /digests/cron); falls back to cron.secret
+    trustedOrigins?,    // origins other than the request host allowed to POST; '*.example.com' ok
+    onRequest?,         // (request) => Response | void, runs before routing
+    rateLimit?: { max, windowMs, key? },  // in-process fixed-window limiter, 429 + Retry-After
+                        // createRateLimiter is also exported, for use inside onRequest
+    maxBodyBytes?,      // default 65536
+    plugins?: [],
+    basePath?,      // default '/api/notifications'; must match where you mount the handler
+    tablePrefix?,   // must match the prefix passed to the adapter
+    logger?,        // { warn, error }
+  })
+
+Recipient = { userId, timezone, locale, email?, phone?, pushTokens? }
+  // userId is all most channels need. timezone and locale are required by the TYPE; only the
+  // digests plugin reads timezone, and the library never reads locale. email is read only by the
+  // email channel. In-app, web push, mobile push and Telegram need nothing beyond userId (their
+  // addresses live in the plugins' own tables). Without real values: { userId, timezone: 'UTC', locale: 'en' }.
+  // An id getRecipients does not return is skipped as 'no-recipient'.
+
+Mount:  export const { GET, POST } = notify.handler   // also notify.handler.handle(request)
+        // Next.js: app/api/notifications/[[...notify]]/route.ts — DOUBLE brackets, the
+        // optional catch-all; single brackets 404 the bare feed path
+        // Node/Express: toNodeHandler(notify.handler.handle, { maxBodyBytes?, onError? }) from 'easy-ping/node'
+Send:   await notify.send('typeName', { to, payload, actorId?, dedupeKey?, overrides? })
+        // to: string | readonly string[];  overrides: { channels?: Channel[] }
+        // returns { notifications: [{ id, userId, deliveries: [{ id, channel }] }],
+        //           skipped:       [{ userId, reason }] }
+        // reason: 'deduped' | 'no-channels' | 'no-recipient' | 'channel-unavailable'
+        // 'channel-unavailable' means a misconfiguration (no provider), NOT a user opt-out
+Ops:    notify.healthCheck()   // { mode, cronMounted, cronRequiredButMissing, warnings }
+        notify.listRoutes()    // every mounted route with { method, path, scope, owner }
+        notify.getFailedDeliveries({ since?, limit? })   // default last 24h, limit 100, cap 1000
+        notify.startWorker({ intervalMs?, batchSize? })  // 'worker' mode; idles 10s, woken by send(); .stop() drains
+        notify.inboxHeaders(userId)   // { 'x-easy-ping-inbox': version } to attach to your own API responses
+React:  const { notifications, unseenCount, unreadCount, nextCursor, isLoading, error,
+                markAsRead, markAllRead, markSeen, loadMore, refresh } = useNotifications()
+        // 'easy-ping/react'. createNotifyClient from 'easy-ping/client' is framework-free.
+        // Options: transport 'auto'|'sse'|'poll', pollIntervalMs (15000), maxPollIntervalMs,
+        //   safetyNetMs, activeWindowMs, scope. client.getTransport() -> { role, transport, connected }
+        // scope: REQUIRED when identity is not a cookie (e.g. a header your fetch adds) — pass the
+        //   user id so tabs signed in as different users never share a leader or mirror state.
+        // The bell stays fresh over GET /events: one tab per browser holds the stream
+        // (navigator.locks), the others mirror it over BroadcastChannel; polling is the fallback,
+        // backing off while idle. Nothing to configure. client.instrument(fetch) refreshes when a
+        // response carries notify.inboxHeaders(userId).
+Service worker relay: handlePush(event) from 'easy-ping/sw' — shows the notification and relays 'changed' to open tabs (bundle it; wrap in event.waitUntil)
+React Native [BETA, under testing]: useNotifications / createNativeNotifyClient from 'easy-ping/react-native' — same options and result
+        as the web hook; AppState decides hidden/active; pass fetch that adds your bearer token. Use fetch from
+        'expo/fetch' to keep the live GET /events stream (RN's built-in fetch cannot stream → polling after one try).
+        registerMobilePushDevice({ baseUrl, fetch, token, platform, deviceName? }) / unregisterMobilePushDevice.
+Browser ('easy-ping/browser', runs in the page):
+  isPushSupported(): boolean
+  subscribeToPush({ publicKey, baseUrl? = '/api/notifications', serviceWorkerPath? = '/sw.js', scope?, fetch? })
+    -> Promise<{ endpoint, keys: { p256dh, auth } }>. Registers the worker, waits until active, asks
+    permission (only if undecided), reuses or creates the subscription, POSTs it to /push/devices.
+    Throws PushUnsupportedError, PushPermissionError, or Error on non-2xx (409 = endpoint owned by
+    another account). Call it from a click handler (permission prompts need a user gesture).
+  unsubscribeFromPush({ baseUrl?, serviceWorkerPath?, scope?, fetch? }) -> Promise<boolean>
+    Removes it server-side first, then in the browser; false when nothing was subscribed.
+Service worker file: plain JS, no imports, in the static folder (public/sw.js) -> NO build step:
+  self.addEventListener('push', (e) => { const p = e.data ? e.data.json() : {};
+    e.waitUntil(self.registration.showNotification(p.title ?? 'Notification',
+      { body: p.body ?? '', data: p.data ?? {}, tag: p.data?.notificationId })) });
+  Using handlePush from 'easy-ping/sw' instead (also refreshes open tabs) REQUIRES bundling the
+  worker (it is an ES module; subscribeToPush registers a classic worker), and must be wrapped:
+  self.addEventListener('push', (e) => e.waitUntil(handlePush(e)))
+VAPID: generateVapidKeys() from 'easy-ping/providers/web-push' is a ONE-TIME setup step. Never call it
+  at startup or per deploy: a new keypair silently invalidates every existing browser subscription.
+
+Core routes (relative to the mount):
+  GET  /            feed — ?limit (1-100, default 20) &cursor &unreadOnly
+                    { notifications, nextCursor, unseenCount? } — unseenCount only on
+                    the first page, so one refresh = one request, not feed + /count
+  GET  /count       { unseen }
+  GET  /events      text/event-stream: 'ready' once, 'changed' when this user's inbox moves; no payload
+  POST /seen        clears the badge
+  POST /read        { ids: string[] } — idempotent
+  POST /read-all
+  POST /cron        Authorization: Bearer <cron.secret>
+Plugins (register in the plugins array):
+  preferences({ ... })  from 'easy-ping/plugins/preferences'
+  digests({ ... })      from 'easy-ping/plugins/digests'
+  push({ provider, render, staleAfterDays?, maxDevicesPerUser?, allowedEndpointHosts?,
+         allowInsecureEndpoints? })   from 'easy-ping/plugins/push'
+    maxDevicesPerUser default 20, evicting the least recently seen
+    allowedEndpointHosts pins registration to known push hosts; unset accepts any public https
+    allowInsecureEndpoints is for a local fake push service ONLY, never production
+  telegram({ provider, botUsername, render, webhookSecret?, linkTtlMinutes? (10), maxChatsPerUser? (5),
+             messages? })   from 'easy-ping/plugins/telegram'
+    provider: telegramBot({ token, fetch?, apiBase? }) from 'easy-ping/providers/telegram'
+    render: ({ type, payload }) => ({ text /* Telegram HTML, escapeHtml() user text */, button?: { text, url } })
+    Linking: POST /telegram/link -> { url: 'https://t.me/<bot>?start=<code>' }; the user taps it, the bot
+      receives '/start <code>' via the webhook (webhookSecret set, register with provider.setWebhook(url, secret))
+      or via plugin.poll() long-polling (no public URL needed; one poller per token). Chats are stored per user.
+    Send fans out to every linked chat; 403/chat-not-found prunes the chat; 429 retries with retry_after.
+    telegramSchema is exported standalone for DDL. Channel name: 'telegram'.
+  mobilePush({ provider, render, staleAfterDays? (180), maxDevicesPerUser? (20) })  from 'easy-ping/plugins/mobile-push'  [BETA]
+    provider: expoPush({ accessToken?, fetch?, apiBase? }) from 'easy-ping/providers/expo-push'
+    render: ({ type, payload }) => ({ title, body, data?, badge?, sound? ('default' | null), channelId? })
+    Devices: POST /mobile-push/devices { token, platform: 'ios'|'android'|'web', deviceName? } (400 bad token,
+      409 owned by another account), GET /mobile-push/devices, POST /mobile-push/devices/remove { token }.
+    Receipts: schedule POST /mobile-push/receipts (machine) with the cron — Expo reports uninstalls late.
+    mobilePushSchema is exported standalone for DDL. Channel name: 'mobilePush'.
+  Each plugin exports its schema standalone too (pushSchema, telegramSchema), so DDL needs no instance.
+Plugin routes: GET+POST /preferences, POST /unsubscribe (signed token),
+  POST /push/devices, POST /push/devices/remove, POST /push/prune, POST /digests/cron (hourly),
+  POST /telegram/link, GET /telegram/chats, POST /telegram/unlink, POST /telegram/webhook (secret header),
+  POST+GET /mobile-push/devices, POST /mobile-push/devices/remove, POST /mobile-push/receipts, POST /mobile-push/prune
+Every POST must be Content-Type: application/json (415 otherwise); a cross-origin Origin header
+is 403 unless listed in trustedOrigins; bodies over maxBodyBytes are 413. /unsubscribe is exempt.
+Push registration: endpoint must be a public https URL, keys 65/16 bytes base64url, else 400;
+an endpoint already owned by another account is 409; maxDevicesPerUser (default 20) evicts oldest.
+
+Plugin surface (definePlugin from 'easy-ping'):
+  { id, dependsOn?, schema?, routes?, hooks?, channels?, init? }
+  hooks: prepare / beforeSend / resolveChannels / afterSend / deliver / afterDeliver
+  beforeSend and resolveChannels fail CLOSED (a throw blocks the send);
+  afterSend and afterDeliver fail OPEN (a throw is logged, delivery proceeds).
+  route scope: { type:'user' } | { type:'machine' } | { type:'signed', purpose }
+             | { type:'custom', justification }
+  A plugin carries a channel core lacks by declaring it in \`channels\` and
+  implementing \`deliver\` — that is how push works.
+  init(ctx) receives { store, sign, logger, notificationTypes, getRecipients, send } — never the
+  secret. ctx.sign({ uid, purpose, data?, ttlSeconds? }) only signs purposes the plugin's own
+  signed routes declare. Parse bodies with readJsonBody(request) from 'easy-ping' (size-capped).
+
+Adapters (no ORM is required — pick ONE):
+  postgresAdapter(query, { prefix?, transaction? })  from 'easy-ping/adapters/postgres'
+    pgTransaction(pool) is the node-postgres transaction option, prebuilt
+    createPostgresTables(query, { plugins?: [pushSchema] }) creates every table, IF NOT EXISTS
+    query is just (text: string, params: readonly unknown[]) => Promise<Row[]>, so any
+    driver works: pg, postgres.js, Kysely, Neon. Pass transaction to get atomic sends;
+    without it each write is still safe, just not grouped.
+    postgresSignals(sql, { channel?, onError? }) — LISTEN/NOTIFY wake-ups across replicas; sql is
+    postgres.js-shaped (listen/notify); pgListenNotify(client) adapts a dedicated pg Client.
+  drizzleAdapter(db, { prefix? })            from 'easy-ping/adapters/drizzle'
+  mongoAdapter(db, { client, prefix? })      from 'easy-ping/adapters/mongodb'
+    mongoSignals(db, { collection?, size?, onError? }) — change-stream wake-ups (needs the replica set)
+  mysqlAdapter(query, { prefix?, transaction? })   from 'easy-ping/adapters/mysql'
+    query is (text, params) => Promise<{ rows, affectedRows }> — MySQL has no RETURNING.
+    mysql2Query(pool) + mysqlTransaction(pool) are prebuilt; create the pool with timezone: 'Z'.
+    createMysqlTables(query, { plugins? }). With transaction a claim uses FOR UPDATE SKIP LOCKED.
+  sqliteAdapter(query, { prefix?, transaction? })  from 'easy-ping/adapters/sqlite'
+    sqliteQuery(db) + sqliteTransaction(db) for node:sqlite (Node 22.13+) or better-sqlite3;
+    createSqliteTables(query, { plugins? }). Dates are ISO text, booleans 0/1.
+  createMongoIndexes(db) / createPluginIndexes(db, schema, prefix?)  — idempotent; also the upgrade path
+    Plugin tables on Mongo: for (const p of plugins) if (p.schema) await createPluginIndexes(db, p.schema)
+    or per schema: createPluginIndexes(db, pushSchema | telegramSchema | mobilePushSchema)
+    (SQL equivalents: createPostgresTables / createMysqlTables / createSqliteTables(query, { plugins: [schema], prefix? }))
+  Plugin tables, every database: create them for EVERY plugin passed to easyPing, or the plugin fails on
+    first use. Pattern: plugins.flatMap(p => p.schema ? [p.schema] : []). Standalone schemas: pushSchema,
+    telegramSchema, mobilePushSchema; preferences and digests via preferences().schema / digests().schema.
+  Drizzle: createSchema(prefix?) is CORE TABLES ONLY. Plugin tables: write renderDrizzleSchema({ ...pushSchema,
+    ...preferences().schema }, prefix?) from 'easy-ping/schema' to a file (e.g. db/easy-ping-plugins.ts), add it to
+    drizzle.config's schema array, run drizzle-kit. Regenerate after every easy-ping upgrade.
+  Upgrades (all additive; destructive changes land in plan.unsupported for a human), per core AND plugin schema:
+    Postgres -> planPostgresMigration(introspect, schema, prefix?); MySQL -> planMysqlMigration(query, schema,
+    prefix?) run statement by statement; SQLite -> planSqliteMigration(query, schema, prefix?) inside one
+    transaction (rebuilds a table that gains a timestamp column); Drizzle -> regenerate plugin file + drizzle-kit;
+    Mongo -> rerun createMongoIndexes + createPluginIndexes. All planners from 'easy-ping/schema'.
+  Cross-replica wake-ups: postgresSignals (Postgres, Drizzle via its postgres.js client) and mongoSignals only.
+    MySQL/SQLite have none; in-memory is exact for one process, else the 30 s stream probe + worker + cron cover it.
+  prefix must be identical on the adapter, the table/index helper, and easyPing's tablePrefix.
+  renderPostgresDdl(schema) / renderMysqlDdl(schema) / renderSqliteDdl(schema)
+                                             — bootstrap ONLY (CREATE TABLE IF NOT EXISTS)
+  planPostgresMigration(introspect, schema)  — additive upgrades; both from 'easy-ping/schema'
+
+Rules that trip people up:
+- send() writes its rows and returns without waiting on a provider — EXCEPT in
+  'inline' mode, which awaits that send's own deliveries before it resolves
+- delivery modes are ADDITIVE: a POST to /cron every 1-5 min is the durability
+  floor beneath all of them. 'deferred' also needs delivery.waitUntil; without it
+  startup warns and delivery just falls back to the cron sweep
+- easyPing() THROWS a ConfigError at construction if delivery.mode is 'cron' or
+  'deferred' and cron.secret is missing — it fails loudly and early rather than
+  mounting an unauthenticated flush-everything endpoint. Same for a missing
+  secret, session.getUserId, getRecipients, a duplicate plugin id, an unmet
+  dependsOn, or two plugins claiming the same route.
+- 'seen' (clears the unseen badge) and 'read' (unbolds one item) are DIFFERENT states
+- payload is typed from that notification's own schema; a wrong shape fails to compile
+- the library never owns your user table — it references user ids via getRecipients
+- dedupeKey makes a send retry-safe; omit it and a retried call creates a duplicate
+- delivery is at-least-once; each delivery carries an idempotency key to the provider
+- email templates are sent as-is: wrap user-typed payload fields in escapeHtml() from 'easy-ping'
+- unsubscribe tokens are refused if the user changed that preference after the token was issued;
+  clicking the same link twice is still 200`;
+
+export const PROMPTS: Record<string, { label: string; text: string }> = {
+  setup: {
+    label: "Set it up in my app",
+    text: `I'm adding notifications to my app with easy-ping.
+
+${API_CONTEXT}
+
+My stack: <Next.js App Router / Express / Hono>, <Postgres with pg or postgres.js / Postgres + Drizzle / MongoDB>, auth is <Better Auth / NextAuth / custom>.
+
+Walk me through it in order: schema, notify.ts config, mounting the route handler, one send() call, and the bell component. Use my real auth and user table.
+
+Also tell me explicitly: which delivery.mode fits my stack and why, what I must schedule to hit POST /cron, and anything else I have to supply myself (secrets, a service worker, email templates). Don't stub getUserId — wire it to my actual session.
+
+Rules for what you generate:
+- secret and cron.secret come from environment variables, at least 16 characters, never a literal placeholder — easyPing() refuses to start otherwise. Tell me the command to generate them.
+- every email template wraps user-typed payload fields (names, excerpts) in escapeHtml() from 'easy-ping'; the library sends template output as-is.
+- if my page and my API are on different origins, set trustedOrigins; any client you write by hand must send Content-Type: application/json on POSTs or get a 415. The shipped client and React hook already do.
+- use the shipped client (useNotifications / createNotifyClient) rather than hand-written fetch calls.`,
+  },
+  push: {
+    label: "Add web push",
+    text: `I already have easy-ping working and want to add web push.
+
+${API_CONTEXT}
+
+Web push specifics:
+- provider: webPush({ subject, vapid, ttlSeconds?, urgency? }) from 'easy-ping/providers/web-push'
+  subject is a mailto: or https: URL the push service can contact you at
+- plugin:   push({ provider, render, staleAfterDays?, maxDevicesPerUser?,
+            allowedEndpointHosts? }) from 'easy-ping/plugins/push'
+  render: ({ type, payload }) => ({ title, body }) — what the OS notification shows
+- await generateVapidKeys() produces the keypair — store both halves as secrets
+  and never regenerate, or every existing subscription breaks
+- the notification type must list 'push' in its channels, or nothing is sent;
+  the plugin is what makes 'push' a usable channel at all
+- the browser half is mine: a service worker with a 'push' listener (without one
+  the browser shows its own generic text), plus subscribeToPush({ publicKey,
+  baseUrl?, serviceWorkerPath?, scope? }) from 'easy-ping/browser'
+- one user may register several devices; a send fans out to all of them in
+  parallel and succeeds if ANY endpoint accepts
+- an endpoint is globally unique AND bound to the account that registered it:
+  registering one already owned by another account is a 409, never a silent
+  re-home. Past 'maxDevicesPerUser' (default 20) the least recently seen row is evicted
+- registration validates the subscription: endpoint must be a public https URL and
+  the keys must be 65/16 bytes base64url, else 400. 'allowedEndpointHosts' pins it
+  to known push hosts; 'allowInsecureEndpoints' is for a local fake service only
+- a push service reporting the subscription gone (404/410), or a subscription the
+  provider cannot encrypt for, prunes that device row immediately rather than
+  retrying it five times; a 429 is retried and is NOT counted as delivered
+- localhost counts as a secure context; any other host needs real HTTPS
+- iOS only delivers to a PWA installed to the home screen (Safari 16.4+)
+
+Write the service worker, the subscribe call, and the plugin config for my app.`,
+  },
+  telegram: {
+    label: "Add Telegram",
+    text: `I already have easy-ping working and want to add Telegram as a channel.
+
+${API_CONTEXT}
+
+Telegram specifics:
+- provider: telegramBot({ token }) from 'easy-ping/providers/telegram'. The token comes from
+  @BotFather; keep it in an environment variable. The provider never puts it in an error or log.
+- plugin:   telegram({ provider, botUsername, render, webhookSecret?, linkTtlMinutes?,
+            maxChatsPerUser?, messages? }) from 'easy-ping/plugins/telegram'
+  render: ({ type, payload }) => ({ text, button? }) — text is Telegram HTML (<b>, <i>, <a>,
+  <code>, <pre>); wrap user-typed payload fields in escapeHtml() or the send fails to parse.
+  button is { text, url } and the url must be a public http(s) link — Telegram rejects
+  localhost and private hosts, so the plugin drops such a button and sends the text alone.
+- the notification type must list 'telegram' in its channels, or nothing is sent; the plugin
+  is what makes 'telegram' a usable channel at all
+- a bot cannot message anyone who has not opened a chat with it, so linking is the real work:
+  POST /telegram/link (user route) returns { url: 'https://t.me/<bot>?start=<code>' }; my UI
+  opens that url; the user taps Start; Telegram sends '/start <code>' back to me; the plugin
+  spends the one-time code (10 min TTL), stores the chat against the user and replies "Connected"
+- how '/start' reaches me is one of two ways, never both:
+  webhook: set webhookSecret, then once per deployment call
+    provider.setWebhook('https://<my-host>/api/notifications/telegram/webhook', secret);
+    Telegram echoes the secret in X-Telegram-Bot-Api-Secret-Token and the route accepts nothing else
+  polling: omit webhookSecret and call plugin.poll() in a long-running process (returns { stop });
+    for development or hosts with no public URL; one poller per bot token
+- GET /telegram/chats lists the user's linked chats; POST /telegram/unlink { chatId? } removes one
+  or all; '/stop' in the chat or blocking the bot also unlinks
+- a chat belongs to one account at a time and moves to whoever holds a fresh code; past
+  maxChatsPerUser (default 5) the least recently seen chat is evicted
+- failures: 429 retries with Telegram's retry_after; 403 and "chat not found" prune the chat on the
+  spot; other 400s fail without retry; 5xx and network errors retry. A user with no linked chat is
+  'skipped', never 'failed'
+- tables: telegramSchema from 'easy-ping/plugins/telegram' — create them like pushSchema
+  (createPostgresTables(query, { plugins: [telegramSchema] }), or createPluginIndexes on Mongo)
+
+Write the plugin config, the table creation, a "Connect Telegram" button for my UI, and either the
+setWebhook step or the poll() call for my hosting setup. Tell me which of the two fits my host.`,
+  },
+  reactNative: {
+    label: "Use it in React Native",
+    text: `I have easy-ping on my server and want the bell and native push in my React Native (Expo) app.
+Note: React Native support and the mobilePush channel are in BETA (under testing); tell me that in your answer.
+
+${API_CONTEXT}
+
+React Native specifics:
+- client: useNotifications({ baseUrl, fetch }) from 'easy-ping/react-native' — same result shape as the web
+  hook (notifications, unseenCount, unreadCount, markSeen, markAsRead, markAllRead, loadMore, refresh).
+  It wires AppState itself: background = hidden (no polling), foreground = immediate refresh.
+- identity is a bearer token, not a cookie: pass a fetch that adds Authorization; my server's
+  session.getUserId must read that header. RN sends no Origin header, which the CSRF check accepts.
+- streaming: RN's built-in fetch cannot stream a body, so the client polls after one failed stream
+  attempt. Pass fetch from 'expo/fetch' (SDK 52+) and GET /events stays live. client.getTransport()
+  reports which mode I ended up in.
+- native push is the 'mobilePush' channel, NOT web push:
+  server: mobilePush({ provider: expoPush({ accessToken? }), render: ({ type, payload }) => ({ title, body,
+          data?, badge?, sound?, channelId? }) }) from 'easy-ping/plugins/mobile-push' and
+          'easy-ping/providers/expo-push'; add 'mobilePush' to the notification type's channels; create
+          the tables from mobilePushSchema; schedule POST /mobile-push/receipts (machine) with the cron
+  app:    request permission with expo-notifications, getExpoPushTokenAsync(), then
+          registerMobilePushDevice({ baseUrl, fetch, token, platform, deviceName? }); on Android create a
+          notification channel first. Push needs a physical device.
+  the plugin adds notificationId and type to data, so a tap handler can markAsRead(notificationId).
+- a token belongs to one account (409 otherwise); DeviceNotRegistered prunes the device; a user with no
+  device is skipped, not failed.
+
+Write the authed fetch, the App screen with the hook, the enable-push flow, and the server plugin config.
+Tell me what to schedule (cron + receipts) and what needs a physical device.`,
+  },
+  mongo: {
+    label: "Use MongoDB instead",
+    text: `I'm using easy-ping and want to run it on MongoDB instead of Postgres.
+
+${API_CONTEXT}
+
+MongoDB specifics:
+- mongoAdapter(db, { client }) from 'easy-ping/adapters/mongodb'
+- pass the MongoClient as well as the db — that is what makes createNotifications
+  atomic (a notification and its deliveries land together, or neither does).
+  Without it the adapter still works, it just loses that guarantee.
+- transactions need a replica set; a single-node replica set is fine locally
+- there are no tables, only indexes: await createMongoIndexes(db) at startup
+- plugin tables: await createPluginIndexes(db, pushSchema)  // schemas export standalone
+- re-running createMongoIndexes is idempotent, so it doubles as the upgrade path
+  (there is no planPostgresMigration equivalent to run, and none is needed)
+- ids are stored as _id; the library never exposes that outside the adapter
+
+Everything above the adapter is identical. Show me exactly what changes in my setup, and a docker-compose service for a single-node replica set.`,
+  },
+  plugin: {
+    label: "Write a plugin",
+    text: `I want to write an easy-ping plugin.
+
+${API_CONTEXT}
+
+Plugin surface, in more detail:
+  definePlugin({ id, dependsOn?, schema?, init?, hooks?, routes?, channels? })
+- schema is a declaration object, not a method: it lists the tables the plugin
+  owns, and the plugin reaches them through a scoped store (ctx.store, handed to
+  init) that validates every table and column against that declaration — it
+  physically cannot read a table it didn't declare
+- the same plugin code runs unmodified on Postgres and MongoDB: the store
+  translates field naming and JSON handling per adapter
+- dependsOn resolves init order, e.g. digests declares dependsOn: ['preferences']
+  and reads that plugin's stored frequency rather than duplicating the table
+- FAILURE POLICY IS ASYMMETRIC: beforeSend/resolveChannels fail CLOSED;
+  afterSend/afterDeliver fail OPEN — get this backwards and either a bug
+  blocks every send, or a broken hook silently hides delivery failures
+- a plugin can carry a channel core doesn't have by declaring it in channels and
+  implementing deliver — that is exactly how the push plugin works
+- routes are scoped and the scope is enforced BEFORE the handler runs, so a
+  handler receives an already-resolved userId or verified claims and cannot
+  forget to check them
+- init(ctx) NEVER receives the master secret. Use ctx.sign({ uid, purpose, data?,
+  ttlSeconds? }), which only mints tokens for purposes this plugin's own signed
+  routes declare, so one plugin cannot forge another's links
+- parse request bodies with readJsonBody(request) from 'easy-ping': it enforces
+  the body-size cap and returns { body } or { error: Response } (400/413) for you.
+  The JSON content-type and Origin checks already ran before your handler for
+  user-scoped POSTs; still check typeof on every field before you query with it
+- ctx.notificationTypes lists the configured notification names — refuse rows for
+  types that do not exist, or every string a client invents becomes a row forever
+- scope { type: 'custom', justification } does its own auth; the justification is
+  printed at startup and by notify.listRoutes(), so say something true in it
+- the scoped store only accepts scalar where-values, or one recognised operator,
+  so a JSON body cannot smuggle a Mongo operator through a plugin route
+
+I want to build: <describe it>. Show me the plugin and how to register it.`,
+  },
+};
+
+export const FULL_CONTEXT = API_CONTEXT;

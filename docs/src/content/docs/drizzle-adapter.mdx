@@ -1,0 +1,111 @@
+export const frontmatter = {
+  title: "Drizzle · Postgres",
+  description: "The reference adapter — raw SQL under a Drizzle-shaped schema, with an atomic FOR UPDATE SKIP LOCKED claim.",
+};
+
+export const toc = [
+  { id: "setup", label: "Setup" },
+  { id: "plugins", label: "Plugin tables" },
+  { id: "raw-sql", label: "Bootstrapping without Drizzle" },
+  { id: "signals", label: "Wake-ups across replicas" },
+  { id: "internals", label: "What it does under the hood" },
+];
+
+## Setup <a id="setup" />
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import { drizzleAdapter } from "easy-ping/adapters/drizzle";
+
+database: drizzleAdapter(db, { prefix: "" }),  // prefix is optional
+```
+
+</CodeBlock>
+
+`db` is a Drizzle instance over `postgres-js` — `drizzle(postgres(connectionString))`. Generate
+the tables with `createSchema()` from the same import and push them with `drizzle-kit`, as shown
+in the [Quickstart](/docs/quickstart).
+
+## Plugin tables <a id="plugins" />
+
+`createSchema()` covers the core tables only. Plugins that own storage (push, Telegram, mobile
+push, preferences, digests) declare their tables separately, and `drizzle-kit` only manages what is
+in your schema files. `renderDrizzleSchema` turns those declarations into a Drizzle schema file you
+commit next to your own:
+
+<CodeBlock title="scripts/easy-ping-schema.ts">
+
+```ts
+// Run after installing or upgrading easy-ping, then run drizzle-kit as usual.
+import { writeFileSync } from "node:fs";
+import { preferences } from "easy-ping/plugins/preferences";
+import { pushSchema } from "easy-ping/plugins/push";
+import { telegramSchema } from "easy-ping/plugins/telegram";
+import { renderDrizzleSchema } from "easy-ping/schema";
+
+writeFileSync(
+  "db/easy-ping-plugins.ts",
+  renderDrizzleSchema({ ...pushSchema, ...telegramSchema, ...preferences().schema }),
+);
+```
+
+</CodeBlock>
+
+<CodeBlock title="drizzle.config.ts">
+
+```ts
+export default defineConfig({
+  dialect: "postgresql",
+  schema: ["./db/schema.ts", "./db/easy-ping-plugins.ts"],
+  // ...
+});
+```
+
+</CodeBlock>
+
+The generated file is ordinary `pgTable` definitions, so `drizzle-kit generate` or `push` creates
+the tables and, after an upgrade, diffs in whatever a new version added. Include only the plugins
+you use. If you pass `prefix` to `drizzleAdapter`, pass the same one to both `createSchema(prefix)`
+and `renderDrizzleSchema(schemas, prefix)`.
+
+Which plugins own storage, and where their declaration comes from:
+
+| Plugin | Schema | Tables |
+| --- | --- | --- |
+| push | `pushSchema` from `easy-ping/plugins/push` | `notification_push_device` |
+| telegram | `telegramSchema` from `easy-ping/plugins/telegram` | `notification_telegram_chat`, `notification_telegram_link` |
+| mobilePush | `mobilePushSchema` from `easy-ping/plugins/mobile-push` | `notification_mobile_push_device`, `notification_mobile_push_ticket` |
+| preferences | `preferences().schema` | `notification_preference` |
+| digests | `digests().schema` | its bucket table |
+
+A plugin whose table is missing fails on its first read or write, not at startup, so create the
+tables for every plugin you pass to `easyPing`. Looping over that same array is the way to make
+sure none is forgotten.
+
+## Bootstrapping without Drizzle <a id="raw-sql" />
+
+`renderPostgresDdl(coreSchema)` emits `CREATE TABLE IF NOT EXISTS` statements for anyone not
+using Drizzle for migrations. It's correct exactly once: on an existing database it's a silent
+no-op, so it cannot pick up a column a later version adds. Read
+[Upgrading](/docs/upgrading) before you rely on it past the first deploy.
+
+## Wake-ups across replicas <a id="signals" />
+
+The Drizzle adapter runs on postgres.js, so the same client gives you Postgres `LISTEN/NOTIFY`:
+pass `signals: postgresSignals(client)` with the `postgres()` instance you handed to `drizzle()`.
+Details, and the PgBouncer caveat, are on the [Postgres page](/docs/postgres-adapter#signals).
+
+## What it does under the hood <a id="internals" />
+
+Nothing here changes how you use the adapter — it's the reason a second database adapter could be
+added without either one changing shape:
+
+- **Claiming is `FOR UPDATE SKIP LOCKED`.** Two concurrent cron sweeps step around each other
+  instead of blocking, and it's proven against a conformance case that holds a real row lock on a
+  separate connection and asserts the claim *skips* it within 2 seconds.
+- **Dedupe relies on Postgres treating every `NULL` as distinct** — unlimited undeduped
+  notifications (no `dedupeKey`) coexist under one `ON CONFLICT (user_id, dedupe_key) DO NOTHING`.
+- **The adapter declares its own dialect** to the plugin storage layer — `naming: "snake_case"`,
+  `serializesJson: true` — rather than the storage layer assuming Postgres conventions. That
+  declaration is what let MongoDB reuse the same plugin code unmodified.

@@ -1,0 +1,268 @@
+export const frontmatter = {
+  title: "Postgres · any driver",
+  description:
+    "Postgres without an ORM. One function — run a parameterised statement, return rows — is the entire contract.",
+};
+
+export const toc = [
+  { id: "why", label: "Why this exists" },
+  { id: "setup", label: "Setup" },
+  { id: "drivers", label: "Other drivers" },
+  { id: "transactions", label: "Transactions" },
+  { id: "tables", label: "Creating the tables" },
+  { id: "dialect", label: "Postgres-specific, on purpose" },
+  { id: "signals", label: "LISTEN/NOTIFY wake-ups" },
+];
+
+## Why this exists <a id="why" />
+
+The [Drizzle adapter](/docs/drizzle-adapter) came first, but it only ever used Drizzle as a SQL
+builder — it imports exactly two things, `sql` and its type, and writes raw SQL with them. Nothing
+about this library needs an ORM.
+
+So this adapter takes the query function directly. The whole contract is one signature:
+
+<CodeBlock bare>
+
+```ts
+type SqlQuery = (
+  text: string,
+  params: readonly unknown[],
+) => Promise<readonly Record<string, unknown>[]>;
+```
+
+</CodeBlock>
+
+Run a parameterised statement, give back rows. Every Postgres driver already does this, which is
+why the same adapter covers all of them.
+
+## Setup <a id="setup" />
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { postgresAdapter } from "easy-ping/adapters/postgres";
+import { Pool } from "pg";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export const notify = easyPing({
+  database: postgresAdapter(
+    async (text, params) => (await pool.query(text, params as unknown[])).rows,
+  ),
+  // ...
+});
+```
+
+</CodeBlock>
+
+Create the tables with `renderPostgresDdl(coreSchema)` from
+[`easy-ping/schema`](/docs/upgrading), the same as any other non-Drizzle setup.
+
+## Other drivers <a id="drivers" />
+
+<Tabs labels={["postgres.js", "Kysely", "Neon serverless"]}>
+
+<CodeBlock bare>
+
+```ts
+import postgres from "postgres";
+
+const sql = postgres(process.env.DATABASE_URL);
+
+postgresAdapter(
+  async (text, params) => await sql.unsafe(text, params),
+  { transaction: (fn) => sql.begin((tx) => fn((t, p) => tx.unsafe(t, p))) },
+);
+```
+
+</CodeBlock>
+
+<CodeBlock bare>
+
+```ts
+import { Kysely, PostgresDialect } from "kysely";
+
+const db = new Kysely({ dialect: new PostgresDialect({ pool }) });
+
+postgresAdapter(
+  async (text, params) => (await db.executeQuery({ sql: text, parameters: [...params] })).rows,
+);
+```
+
+</CodeBlock>
+
+<CodeBlock bare>
+
+```ts
+import { neon } from "@neondatabase/serverless";
+
+const sql = neon(process.env.DATABASE_URL);
+
+// No transaction option: HTTP-mode serverless drivers have no session to hold
+// one open. createNotifications still works, it just is not atomic.
+postgresAdapter(async (text, params) => await sql.query(text, [...params]));
+```
+
+</CodeBlock>
+
+</Tabs>
+
+Prisma works too, via `$queryRawUnsafe` — though if you're already on Prisma you're paying for an
+ORM this adapter exists to avoid.
+
+## Transactions <a id="transactions" />
+
+The optional `transaction` option is what makes `createNotifications` atomic: a notification and
+its deliveries land together, or neither does.
+
+<CodeBlock bare title="with node-postgres">
+
+```ts
+import { pgTransaction, postgresAdapter } from "easy-ping/adapters/postgres";
+
+postgresAdapter(query, { transaction: pgTransaction(pool) });
+```
+
+</CodeBlock>
+
+`pgTransaction` is the same sixteen lines everyone wrote by hand, in one place. The part worth
+centralising is the `finally`: drop the `client.release()` and every send leaks a connection
+until the pool is exhausted, which only shows up under load.
+
+On another driver, write it yourself. The shape is the same:
+
+<CodeBlock bare title="by hand, on any driver">
+
+```ts
+transaction: async (fn) => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(async (t, p) => (await client.query(t, p as unknown[])).rows);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+```
+
+</CodeBlock>
+
+<Note tag="Optional">
+  Omit it and the adapter still works — it just loses that one guarantee, so a crash between the
+  two writes could leave a notification with no deliveries. That's the same tradeoff the
+  [MongoDB adapter](/docs/mongodb-adapter) makes when you don't pass the client.
+</Note>
+
+## Creating the tables <a id="tables" />
+
+`createPostgresTables` renders the DDL from the installed version's schema and runs it, so the
+tables cannot drift from the package you have. Every statement is `IF NOT EXISTS`, so it is safe
+on every boot.
+
+<CodeBlock bare>
+
+```ts
+import { createPostgresTables } from "easy-ping/adapters/postgres";
+
+const plugins = [preferences(), push({ provider, render }), telegram({ /* ... */ })];
+
+await createPostgresTables(query, {
+  plugins: plugins.flatMap((plugin) => (plugin.schema ? [plugin.schema] : [])),
+  prefix: "",   // must match postgresAdapter's prefix and easyPing's tablePrefix
+});
+
+export const notify = easyPing({ database: postgresAdapter(query), plugins /* , ... */ });
+```
+
+</CodeBlock>
+
+The channel plugins also export their schema standalone, for a setup script with no plugin
+instance (and therefore no provider invented just to read a schema):
+`await createPostgresTables(query, { plugins: [pushSchema] })`.
+
+Which plugins own storage, and where their declaration comes from:
+
+| Plugin | Schema | Tables |
+| --- | --- | --- |
+| push | `pushSchema` from `easy-ping/plugins/push` | `notification_push_device` |
+| telegram | `telegramSchema` from `easy-ping/plugins/telegram` | `notification_telegram_chat`, `notification_telegram_link` |
+| mobilePush | `mobilePushSchema` from `easy-ping/plugins/mobile-push` | `notification_mobile_push_device`, `notification_mobile_push_ticket` |
+| preferences | `preferences().schema` | `notification_preference` |
+| digests | `digests().schema` | its bucket table |
+
+A plugin whose table is missing fails on its first read or write, not at startup, so create the
+tables for every plugin you pass to `easyPing`. Looping over that same array is the way to make
+sure none is forgotten.
+
+<Note tag="Bootstrap, not migration">
+  This creates what is missing and never alters what exists. Once a database is live and the
+  schema changes, use [`planPostgresMigration`](/docs/upgrading) instead, once for `coreSchema`
+  and once per plugin schema.
+</Note>
+
+## Postgres-specific, on purpose <a id="dialect" />
+
+This is not a generic SQL adapter, and calling it one would be a lie. The statements use
+`ON CONFLICT`, `IS DISTINCT FROM`, `RETURNING` and — the one that matters — `FOR UPDATE SKIP
+LOCKED`, which is what lets two concurrent sweeps step around each other instead of blocking.
+
+The other SQL engines are their own adapters, sharing one dialect-parameterised core rather than
+copies of this file: [MySQL](/docs/mysql-adapter) spells the claim two ways depending on whether
+you pass a transaction, and [SQLite](/docs/sqlite-adapter) leans on its single writer. All six
+backends in the repo run the same [conformance suite](/docs/writing-an-adapter); this one was
+verified against it before it shipped, including the row-lock case.
+
+## LISTEN/NOTIFY wake-ups <a id="signals" />
+
+With more than one replica, a `send()` on one process should wake the worker and the bell's
+[event stream](/docs/in-app-inbox#transport) on the others. `postgresSignals` does that over
+`LISTEN/NOTIFY`, with no extra table:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+import postgres from "postgres";
+import { postgresAdapter, postgresSignals } from "easy-ping/adapters/postgres";
+
+const sql = postgres(process.env.DATABASE_URL!);
+
+export const notify = easyPing({
+  database: postgresAdapter((text, params) => sql.unsafe(text, params as never[])),
+  signals: postgresSignals(sql),   // { channel?: "easy_ping", onError? }
+  // ...
+});
+```
+
+</CodeBlock>
+
+Every logical channel (`inbox:<userId>`, `deliveries`) travels as the payload on one Postgres
+channel, because Postgres channel names are identifiers and user ids are not. Each process tags
+its own publishes so it does not react to its own echo.
+
+For node-postgres, LISTEN is per connection, so hand it a dedicated connected `Client`, not the
+pool:
+
+<CodeBlock bare>
+
+```ts
+import { Client } from "pg";
+import { pgListenNotify, postgresSignals } from "easy-ping/adapters/postgres";
+
+const listener = new Client({ connectionString: process.env.DATABASE_URL });
+await listener.connect();
+signals: postgresSignals(pgListenNotify(listener)),
+```
+
+</CodeBlock>
+
+<Note tag="PgBouncer">
+  Transaction-mode pooling does not carry LISTEN. Point the listening connection at the database
+  directly (Neon and Supabase expose a direct port next to the pooled one). If a signal is lost
+  anyway, the stream's fingerprint probe and the cron sweep still catch up; nothing is dropped.
+</Note>

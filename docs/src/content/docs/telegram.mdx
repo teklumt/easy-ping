@@ -1,0 +1,205 @@
+export const frontmatter = {
+  title: "Telegram",
+  description: "A bot the user connects with one tap. Messages go to every chat they linked; blocked chats prune themselves.",
+};
+
+export const toc = [
+  { id: "how", label: "How it works" },
+  { id: "bot", label: "Creating the bot" },
+  { id: "setup", label: "Provider and plugin" },
+  { id: "linking", label: "Connecting a user" },
+  { id: "updates", label: "Webhook or polling" },
+  { id: "routes", label: "Routes and tables" },
+  { id: "failures", label: "Failures and pruning" },
+];
+
+Telegram is a plugin (`telegram`) plus a provider (`telegramBot`), the same shape as
+[web push](/docs/web-push): the channel needs a registry the core schema does not have, here the
+chat each user connected.
+
+## How it works <a id="how" />
+
+A bot cannot message anyone until that person has opened a chat with it, and what you must store
+is the `chat_id` Telegram hands you at that moment. So the plugin has two halves: linking a user to
+a chat, then sending.
+
+1. Your app asks for a link: `POST /telegram/link` returns `https://t.me/<bot>?start=<code>`.
+   The code is random, one-time, and expires in ten minutes.
+2. The user taps it. Telegram opens the bot and sends `/start <code>` to your webhook (or your
+   poller). The plugin spends the code, stores the chat against the user, and replies "Connected".
+3. From then on, `send()` to that user with `telegram` in the channels fans out to every chat they
+   linked. `/stop`, blocking the bot, or `POST /telegram/unlink` removes a chat.
+
+## Creating the bot <a id="bot" />
+
+In Telegram, talk to **@BotFather**: `/newbot`, pick a name and a username ending in `bot`. It
+answers with the token. Keep the token as a secret; the provider never lets it into an error
+message or a log line. You will need the username as well, without the `@`.
+
+## Provider and plugin <a id="setup" />
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { escapeHtml } from "easy-ping";
+import { telegram } from "easy-ping/plugins/telegram";
+import { telegramBot } from "easy-ping/providers/telegram";
+
+const telegramPlugin = telegram({
+  provider: telegramBot({ token: process.env.TELEGRAM_BOT_TOKEN! }),
+  botUsername: process.env.TELEGRAM_BOT_USERNAME!,
+  webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,   // omit to use poll() instead
+  render: ({ type, payload }) => {
+    const data = payload as { authorName?: string; url?: string };
+    return {
+      text: `<b>${escapeHtml(data.authorName)}</b> replied to your comment`,
+      button: data.url ? { text: "Open", url: data.url } : undefined,
+    };
+  },
+});
+
+export const notify = easyPing({
+  // ...
+  plugins: [telegramPlugin],
+});
+```
+
+</CodeBlock>
+
+`render` returns Telegram HTML (`<b>`, `<i>`, `<a href>`, `<code>`, `<pre>`) and an optional
+inline button. Anything a user typed goes through `escapeHtml()`, or their text is parsed as
+markup, which at best fails the send and at worst injects a link. Link previews are off.
+
+The button's URL must be a public http(s) link. Telegram rejects `localhost`, private hosts and
+IP literals with a 400 for the whole message, so the plugin drops such a button, logs a warning,
+and sends the text on its own rather than failing the delivery.
+
+Options: `linkTtlMinutes` (10), `maxChatsPerUser` (5, evicting the least recently seen), and
+`messages` to reword the bot's four replies (connected, disconnected, expired link, bare
+`/start`).
+
+## Connecting a user <a id="linking" />
+
+<CodeBlock title="components/ConnectTelegram.tsx">
+
+```ts
+async function connectTelegram() {
+  const { url } = await fetch("/api/notifications/telegram/link", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  }).then((r) => r.json());
+
+  window.open(url, "_blank", "noopener");   // opens Telegram on the bot with the code attached
+}
+```
+
+</CodeBlock>
+
+`GET /telegram/chats` lists what the user has linked, for a settings page.
+`POST /telegram/unlink` with `{ chatId }` removes one chat, or every chat with no body.
+
+A chat belongs to one account at a time. If someone taps a fresh link while their chat is linked
+to another account, the chat moves: the Telegram user tapped it, and the app session that minted
+the code is theirs. The flip side is a social-engineering risk: a link someone else minted and
+persuades a user to tap moves that user's chat to the other account. Show the linked chats from
+`GET /telegram/chats` on your settings page so a user can see, and unlink, what is connected.
+
+Each user has one live link code at a time; asking for a new link retires the previous one.
+Updates that do not have the shape Telegram sends are ignored.
+
+## Webhook or polling <a id="updates" />
+
+Telegram has to reach you with `/start` and `/stop` messages. Two ways:
+
+**Webhook** (production). Set `webhookSecret` and register the URL once per deployment:
+
+<CodeBlock bare>
+
+```ts
+await telegramBot({ token }).setWebhook(
+  "https://app.example.com/api/notifications/telegram/webhook",
+  process.env.TELEGRAM_WEBHOOK_SECRET!,
+);
+```
+
+</CodeBlock>
+
+Telegram echoes the secret in the `X-Telegram-Bot-Api-Secret-Token` header and the route accepts
+nothing else (compared in constant time). Without `webhookSecret` the route is not mounted and does
+not appear in `notify.listRoutes()`.
+
+**Polling** (development, or a host with no public URL). Skip `webhookSecret` and long-poll:
+
+<CodeBlock bare>
+
+```ts
+const poller = telegramPlugin.poll();
+process.on("SIGTERM", () => poller.stop());
+```
+
+</CodeBlock>
+
+Run one poller per bot token. Two would split the updates between them, and Telegram refuses
+`getUpdates` while a webhook is set, so it is one or the other.
+
+## Routes and tables <a id="routes" />
+
+| Route | Method | Scope | Does |
+| --- | --- | --- | --- |
+| `/telegram/link` | POST | user | Mints a one-time code; returns `{ url, code, expiresAt }` |
+| `/telegram/chats` | GET | user | The user's linked chats |
+| `/telegram/unlink` | POST | user | Removes one chat by `chatId`, or all of the user's |
+| `/telegram/webhook` | POST | custom | Telegram's updates, authenticated by the secret header. Only with `webhookSecret` |
+
+Two tables, created from `telegramSchema` the same way as [push devices](/docs/push-plugin):
+`notification_telegram_chat` (one row per linked chat, unique on `chat_id`) and
+`notification_telegram_link` (pending codes, pruned per user on each new link).
+
+<Tabs labels={["Postgres", "MySQL", "SQLite", "MongoDB"]}>
+<CodeBlock bare>
+
+```ts
+import { telegramSchema } from "easy-ping/plugins/telegram";
+await createPostgresTables(query, { plugins: [telegramSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { telegramSchema } from "easy-ping/plugins/telegram";
+await createMysqlTables(query, { plugins: [telegramSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { telegramSchema } from "easy-ping/plugins/telegram";
+await createSqliteTables(query, { plugins: [telegramSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { telegramSchema } from "easy-ping/plugins/telegram";
+await createPluginIndexes(db, telegramSchema);   // from "easy-ping/adapters/mongodb"; idempotent
+```
+
+</CodeBlock>
+</Tabs>
+
+## Failures and pruning <a id="failures" />
+
+The provider never throws on send; it classifies:
+
+- **429** is retryable and carries Telegram's `retry_after`. Limits are about thirty messages a
+  second overall and one a second per chat, far above what the sweep sends.
+- **403** (the user blocked the bot or was deactivated) and **400 chat not found** mark the chat
+  *gone*. It is deleted on the spot, so the next send skips instead of failing.
+- **Other 400s** (malformed HTML, usually) fail without retry and keep the chat: a retry cannot
+  fix the message.
+- **5xx and network errors** are retryable through the normal backoff.
+
+A user with no linked chat is `skipped`, never `failed`, the same as push with no device.

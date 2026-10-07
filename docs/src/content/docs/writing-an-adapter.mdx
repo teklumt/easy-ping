@@ -1,0 +1,90 @@
+export const frontmatter = {
+  title: "Writing an adapter",
+  description: "The DatabaseAdapter interface, and the conformance suite that proves an implementation actually holds the claim guarantee.",
+};
+
+export const toc = [
+  { id: "interface", label: "The interface" },
+  { id: "dialect", label: "Declaring your dialect" },
+  { id: "conformance", label: "The conformance suite" },
+];
+
+## The interface <a id="interface" />
+
+<CodeBlock bare>
+
+```ts
+type DatabaseAdapter = {
+  name: string;
+  naming?: "snake_case" | "preserve";
+  serializesJson?: boolean;
+
+  createNotifications(rows): Promise<{ created: string[]; deduped: string[] }>;
+  claimPendingDeliveries(args): Promise<ClaimedDelivery[]>;
+  releaseDeliveries(releases): Promise<void>;
+
+  listNotifications(query): Promise<FeedPage>;
+  countUnseen(userId): Promise<number>;
+  markSeen(userId, before): Promise<void>;
+  markRead(userId, ids): Promise<number>;
+  markAllRead(userId): Promise<number>;
+
+  getFailedDeliveries(args): Promise<DeliveryRecord[]>;
+
+  // Generic access for plugin-declared tables — reached only through the
+  // scoped PluginStore, which validates every table and column first.
+  queryTable(table, where, options): Promise<Record<string, unknown>[]>;
+  insertRows(table, rows, onConflict?): Promise<number>;
+  updateRows(table, where, set): Promise<number>;
+  deleteRows(table, where): Promise<number>;
+};
+```
+
+</CodeBlock>
+
+`claimPendingDeliveries` / `releaseDeliveries` are the one operation with no equivalent in most
+libraries — without an atomic claim, two concurrent sweeps send the same email twice. It doesn't
+have to be `FOR UPDATE SKIP LOCKED`; MongoDB implements the same contract with a loop of atomic
+`findOneAndUpdate` calls instead. What matters is that two concurrent claims return **disjoint**
+sets and neither blocks behind the other.
+
+## Declaring your dialect <a id="dialect" />
+
+`naming` and `serializesJson` tell the plugin storage layer how to talk to your driver, instead of
+it assuming Postgres conventions:
+
+- **`naming: "snake_case"`** — a SQL adapter with columns named `user_id`. `"preserve"` — a
+  document store that keeps the declared camelCase field names as-is.
+- **`serializesJson: true`** — the driver needs `JSON.stringify`d text for a json column (true of
+  `postgres-js`, which can't bind a plain object). `false` — the driver stores an object natively.
+
+Get this wrong and the failure is silent rather than a type error: fields come back `undefined` at
+runtime while everything still typechecks, because the store is reading from the wrong key.
+
+## The conformance suite <a id="conformance" />
+
+<CodeBlock bare>
+
+```ts
+import { adapterConformanceCases } from "easy-ping/testing";
+
+for (const testCase of adapterConformanceCases) {
+  if (testCase.requires === "rowLock" && !myBackendHasRowLocks) continue;
+
+  it(testCase.name, () => testCase.run({
+    adapter: myAdapter,
+    reset: async () => { /* empty the tables between cases */ },
+    setAttempts: async (deliveryId, attempts) => { /* force a delivery's attempt count */ },
+    lockRow: async (deliveryId, fn) => { /* hold a real lock, only if your backend has one */ },
+  }));
+}
+```
+
+</CodeBlock>
+
+Thirteen cases, portable across any backend. The one that actually distinguishes a correct
+adapter holds a row lock on a separate connection and asserts a concurrent claim **skips** it
+rather than blocking — that's tagged `requires: "rowLock"`, and a backend whose claim is a single
+atomic operation (nothing to lock, nothing to skip) filters it out rather than faking a pass. Both
+shipped adapters run the exact same suite; see [Drizzle · Postgres](/docs/drizzle-adapter) and
+[MongoDB](/docs/mongodb-adapter) for what each one does differently to satisfy it.

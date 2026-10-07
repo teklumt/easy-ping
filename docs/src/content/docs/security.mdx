@@ -1,0 +1,127 @@
+export const frontmatter = {
+  title: "Security",
+  description: "The trust boundaries the library enforces, and the two things it can't protect you from.",
+};
+
+export const toc = [
+  { id: "secrets", label: "The secrets" },
+  { id: "scoping", label: "Every route is scoped" },
+  { id: "requests", label: "Request hardening" },
+  { id: "push", label: "Push endpoints" },
+  { id: "payload", label: "Payload visibility" },
+  { id: "events", label: "The event stream" },
+  { id: "your-part", label: "What's still on you" },
+];
+
+## The secrets <a id="secrets" />
+
+Three credentials, each a separate trust boundary so rotating one never invalidates another:
+
+- **`secret`** keys the tokens behind unsubscribe links and any other session-less URL. Keys are
+  derived per purpose (HKDF), so a token for one purpose never verifies as another. Rotating it
+  breaks every outstanding link — that's the tradeoff for not storing tokens in a table.
+- **`cron.secret`** authenticates `/cron`, compared in constant time over digests so even the
+  secret's length is not observable. Leave it unset with a mode that needs the sweep and
+  `easyPing()` **throws at startup** rather than mounting the route unauthenticated.
+- **`machineSecret`** (optional) guards plugin machine routes such as `/push/prune` and
+  `/digests/cron`. It falls back to `cron.secret`; set it when the scheduler that hits `/cron`
+  should not also be able to prune devices or fire digests.
+
+All three must be **at least 16 characters and not a placeholder**, or startup throws.
+`openssl rand -base64 32` is the easy way. Plugins never see any of them: a plugin gets
+`ctx.sign()`, which only mints tokens for the purposes its own signed routes declare.
+
+Treat them like any other credential — environment variables, never committed, rotated if they
+ever leak.
+
+## Every route is scoped <a id="scoping" />
+
+The three route scopes — `user`, `machine`, `signed` — are enforced by the handler before your
+code runs, not left to each route to remember. A `user`-scoped route's handler receives an
+already-resolved `userId`; it never sees a client-supplied one it could be tricked into trusting.
+See [Route handler](/docs/route-handler) for the full breakdown.
+
+`markRead` and the feed routes are additionally scoped by user id **in the query itself**, not
+just at the auth layer — a request authenticated as one user can never touch another user's rows
+by guessing an id, even if the auth check were somehow bypassed.
+
+`notify.listRoutes()` returns every mounted route with its scope and owner. A route that opts
+out with `{ type: "custom" }` is named in a startup warning together with its justification,
+so the escape hatch stays visible.
+
+## Request hardening <a id="requests" />
+
+Defences that hold regardless of how your session cookie is configured:
+
+- **CSRF.** Every POST must be `application/json` (415 otherwise). When the browser sends an
+  `Origin`, it must match the request host or an entry in `trustedOrigins` (403 otherwise). A
+  cross-site form cannot satisfy either without a preflight the browser refuses. The signed
+  `/unsubscribe` route is exempt so one-click unsubscribe from a mail client keeps working.
+- **Bodies are capped** at `maxBodyBytes` (default 64 KiB) while streaming, as 413; malformed
+  JSON is a 400 rather than an empty object.
+- **Responses** carry `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`,
+  plugin routes included.
+- **Errors never escape.** A throwing adapter is a logged 500 with an empty body, and
+  `toNodeHandler` no longer rethrows after responding, which under Express was an unhandled
+  rejection and a dead process.
+- **Rate limiting.** `rateLimit: { max, windowMs, key? }` is an in-process fixed-window limiter
+  applied to every route, including `/cron` and `/unsubscribe`, answering 429 with `Retry-After`.
+  It is per process, so it blunts abuse rather than enforcing a quota; `onRequest` runs before it
+  if you have a shared limiter of your own.
+
+  The default key is the client address from `cf-connecting-ip`, `x-real-ip` or
+  `x-forwarded-for`. Those headers are only trustworthy **behind a proxy you control that sets
+  them**. Exposed directly, a client can send a different `x-forwarded-for` on every request; pass
+  your own `key` in that case (a session id, an API key). When none of the headers is present, every
+  such request shares one bucket rather than escaping the limit (a warning is logged once when that
+  happens), and the limiter tracks at most
+  `maxKeys` (10 000) keys at once so spoofed values cannot grow memory. A custom `key` that returns
+  `null` exempts that request, which is how you skip health checks.
+
+## Push endpoints <a id="push" />
+
+The server POSTs to whatever endpoint a user registers, so registration is the SSRF boundary.
+Endpoints must be public https URLs; loopback, private and link-local addresses are refused, as
+are keys that are not a 65-byte P-256 point and a 16-byte secret. `allowedEndpointHosts` pins
+registration to the push services you expect. An endpoint belongs to one account for life: a
+second account registering it gets a 409, so knowing someone's endpoint URL is not enough to
+redirect their pushes. Each user keeps at most `maxDevicesPerUser` devices (default 20). See
+[Push devices](/docs/push-plugin).
+
+## Payload visibility <a id="payload" />
+
+<Note tag="Important">
+  In-app notification payloads are served to the browser **verbatim** through the feed endpoint.
+  Never put anything in `payload` the recipient shouldn't be able to read directly — an internal
+  id is fine; another user's email address is not.
+</Note>
+
+## The event stream <a id="events" />
+
+`GET /events` sits behind the same session check as every user route and sets no CORS headers, so
+another origin cannot read it. It carries no notification data: only `ready`, `changed` and
+keepalive comments. What it can cost is connections, so it is capped per user
+(`events.maxStreamsPerUser`, 10) and per process (`events.maxStreams`, 5000), a stalled consumer
+is disconnected, and the fallback database probe is shared across a user's streams.
+
+On the client, the leader lock and tab channel are same-origin by the platform. If your identity
+is not a cookie, pass `scope` so tabs signed in as different users never share a group; see
+[In-app inbox](/docs/in-app-inbox#transport). `instrument(fetch)` honours the inbox header only
+from the page's own origin.
+
+Cross-process signals (`postgresSignals`, `mongoSignals`) are wake-ups, never data. Anyone who can
+NOTIFY on your database channel could make clients refresh, and nothing more; they already have
+your data.
+
+## What's still on you <a id="your-part" />
+
+The library doesn't own your user table, your auth, or your UI — which means three things stay
+your responsibility no matter how it's configured:
+
+- **`session.getUserId` has to be real.** A stub that returns a hardcoded id during development
+  is a security hole if it ever reaches production.
+- **The cron endpoint needs a real scheduler behind real auth** — see [Cron sweep](/docs/cron).
+- **Email and push content are yours to write.** Templates are sent as-is, so run every payload
+  field a user could have typed through `escapeHtml` (exported from `easy-ping`) or use a
+  templating library that escapes by default. Unescaped, a display name becomes markup delivered
+  from your sending domain. The same goes for rendering in-app payloads: never `innerHTML`.

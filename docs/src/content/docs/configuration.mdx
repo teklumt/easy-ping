@@ -1,0 +1,295 @@
+export const frontmatter = {
+  title: "Configuration",
+  description: "The full easyPing() option reference.",
+};
+
+export const toc = [
+  { id: "shape", label: "The full shape" },
+  { id: "secrets", label: "secret, cron.secret, machineSecret" },
+  { id: "hardening", label: "Request hardening options" },
+  { id: "session", label: "session.getUserId" },
+  { id: "recipients", label: "getRecipients" },
+  { id: "channels", label: "channels" },
+  { id: "delivery", label: "delivery.mode" },
+  { id: "events", label: "events and signals" },
+  { id: "notifications", label: "notifications" },
+  { id: "plugins", label: "plugins" },
+  { id: "mounting", label: "basePath and tablePrefix" },
+];
+
+## The full shape <a id="shape" />
+
+Every option `easyPing()` accepts, in one place:
+
+<CodeBlock title="notify.ts" bare={false}>
+
+```ts
+easyPing({
+  // --- required ---
+  database,   // drizzleAdapter(db) | mongoAdapter(db, { client })
+  secret,     // signs unsubscribe links and other session-less URLs
+
+  session: {
+    getUserId: (request: Request) => string | null | Promise<string | null>,
+  },
+
+  getRecipients: (userIds: readonly string[]) => Promise<readonly Recipient[]>,
+
+  notifications: {
+    [typeName: string]: defineNotification({
+      schema?,        // any Standard Schema validator — zod, valibot, arktype
+      channels,       // readonly Channel[]
+      email?,         // { subject, template }
+      maxAttempts?,   // overrides delivery.maxAttempts for this type
+    }),
+  },
+
+  channels: {
+    inApp?: { enabled: boolean },
+    email?: { provider: EmailProvider },
+  },
+
+  // --- optional ---
+  cron?: { secret, maxSweeps? },  // required by "cron" and "deferred" — throws without it
+  machineSecret?,     // plugin machine routes; falls back to cron.secret
+  trustedOrigins?,    // origins other than the request host that may POST; "*.example.com" ok
+  onRequest?,         // (request) => Response | void — runs before routing
+  rateLimit?: { max, windowMs, key? },  // in-process limiter, applied before routing
+  maxBodyBytes?,      // default 65536
+
+  delivery?: {
+    mode?: "inline" | "deferred" | "worker" | "cron",   // default "cron"
+    waitUntil?: (promise: Promise<unknown>) => void,     // "deferred" needs this
+    maxAttempts?: number,   // default 5
+    leaseMs?: number,       // default 60000 — must exceed the slowest provider timeout
+    batchSize?: number,     // default 20
+    backoff?: "exponential" | ((attempt: number) => number),
+    throwOnError?: boolean, // "inline" only
+    sweepOnRequest?: true | { everyMs?: number, limit?: number },  // bounded pass after any request
+  },
+
+  events?: {                  // GET /events, the stream behind the bell; false removes the route
+    heartbeatMs?: number,     // default 25000 — keepalive comment interval
+    probeIntervalMs?: number, // default 30000 — fingerprint probe when signals are in-process only
+    maxDurationMs?: number,   // default 0 (no limit) — close streams before a host's cap does
+    maxStreamsPerUser?: number, // default 10 — more open streams for one user get a 429
+    maxStreams?: number,      // default 5000 — more open streams in this process get a 503
+  } | false,
+  signals?: Signals,          // default in-memory; postgresSignals(sql) | mongoSignals(db) across replicas
+
+  plugins?: [],
+  basePath?,      // default "/api/notifications" — must match where you mount the handler
+  tablePrefix?,   // must match the prefix you passed to the adapter
+  logger?,        // { warn, error } — defaults to console
+});
+```
+
+</CodeBlock>
+
+<Note tag="Recipient">
+  `getRecipients` must return `{ userId, timezone, locale, email?, phone?, pushTokens? }`.
+  **`timezone` and `locale` are required** — the digests plugin resolves send windows in the
+  recipient's own timezone, and email templates read the locale.
+</Note>
+
+## secret, cron.secret, machineSecret <a id="secrets" />
+
+`secret` signs the unsubscribe links the preferences plugin issues, and any other session-less
+URL a plugin needs to authenticate without a cookie. Rotate it and every outstanding link breaks
+— that's the tradeoff for not storing tokens in a table.
+
+`cron.secret` authenticates the `/cron` route. It is a separate secret on purpose: cron access and
+unsubscribe-link signing are different trust boundaries, and rotating one should never invalidate
+the other. `machineSecret` optionally does the same for plugin machine routes (`/push/prune`,
+`/digests/cron`); unset, they accept `cron.secret`.
+
+Each must be at least 16 characters and not a placeholder such as `changeme`, or construction
+throws. `openssl rand -base64 32` produces a suitable value.
+
+<Note tag="Fails loudly">
+  If `delivery.mode` is `"cron"` or `"deferred"` and `cron.secret` is missing, `easyPing()`
+  **throws a `ConfigError` at construction** — your app won't start. That's deliberate: the
+  alternative is mounting an unauthenticated flush-everything endpoint against your email
+  provider, and a crash at boot is a far better outcome than that shipping quietly.
+</Note>
+
+`easyPing()` validates eagerly and refuses to construct on any of these: a missing `database`,
+`notifications`, `secret`, `session.getUserId` or `getRecipients`; a weak or placeholder secret;
+a duplicate plugin id; a `dependsOn` naming a plugin that isn't registered; two plugins claiming
+the same route; or a `rateLimit` with a non-positive `max` or `windowMs`. None of those degrade
+into a runtime surprise.
+
+## Request hardening options <a id="hardening" />
+
+| Option | Default | Does |
+| --- | --- | --- |
+| `trustedOrigins` | `[]` | Origins other than the request host allowed to POST. Every POST must also be `application/json`. |
+| `onRequest` | — | Runs before routing; return a `Response` to short-circuit. |
+| `rateLimit` | off | `{ max, windowMs, key?, maxKeys? }`, in-process fixed window, 429 with `Retry-After`. Keyed by client address from the usual proxy headers, which only a proxy you control makes trustworthy; pass `key` otherwise. See [Security](/docs/security#requests). |
+| `maxBodyBytes` | 64 KiB | Cap on any JSON body, enforced while streaming. |
+| `cron.maxSweeps` | 50 | Sweeps one `POST /cron` may run before it returns. |
+
+See [Security](/docs/security) for what each one defends against.
+
+## session.getUserId <a id="session" />
+
+Not optional. Every mounted route that reads or writes "the current user's" data resolves through
+this function — there's no way to opt out per-route. Return the user id, or `null` to make the
+request 401. An empty string or a non-string is treated as `null` too (with one warning in the
+log), so `session?.user?.id ?? ""` cannot turn every anonymous visitor into one shared user.
+Throwing surfaces as a 500, which is deliberately distinct from an unauthenticated request.
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+session: {
+  getUserId: async (request) =>
+    (await auth.api.getSession({ headers: request.headers }))?.user.id ?? null,
+},
+```
+
+</CodeBlock>
+
+## getRecipients <a id="recipients" />
+
+Called once per `send()`, with every recipient id in that call — never once per recipient. Return
+one object per user you can resolve; an id you leave out is reported as `skipped: "no-recipient"`.
+
+Only `userId` is needed by most channels. The rest is read by exactly one thing each:
+
+| Field | Type | Read by |
+| --- | --- | --- |
+| `userId` | required | everything |
+| `timezone` | required by the type | the digests plugin, to send at the recipient's local hour |
+| `locale` | required by the type | your own templates, if they localise; the library never reads it |
+| `email` | optional | the email channel. Without it an email delivery fails as "recipient has no email address" |
+| `phone`, `pushTokens` | optional | nothing yet; reserved for future channels |
+
+In-app, web push, mobile push and Telegram need nothing beyond `userId`: their addresses live in
+the plugins' own tables, registered by the user's device or chat. If you do not track timezones or
+locales, return `"UTC"` and `"en"`:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+// In-app, push and Telegram only: no user table lookup at all.
+getRecipients: async (userIds) =>
+  userIds.map((userId) => ({ userId, timezone: "UTC", locale: "en" })),
+```
+
+</CodeBlock>
+
+With email, or with digests at local time, load the real values:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+getRecipients: async (userIds) =>
+  db.query.users.findMany({ where: inArray(users.id, [...userIds]) })
+    .then((rows) => rows.map((u) => ({
+      userId: u.id,
+      email: u.email,
+      timezone: u.timezone ?? "UTC",
+      locale: u.locale ?? "en",
+    }))),
+```
+
+</CodeBlock>
+
+## channels <a id="channels" />
+
+`inApp` is built in and needs no provider — just `{ enabled: true }`. `email` needs a provider;
+[Resend](/docs/email) ships one, or implement the `EmailProvider` interface yourself. Any other
+channel — push, sms, slack — is added by a plugin declaring it, not by this object. See
+[Web push](/docs/web-push) for the one that ships.
+
+## delivery.mode <a id="delivery" />
+
+See [Delivery modes](/docs/delivery-modes) for the full comparison. The short version: `inline`
+delivers before `send()` returns; the other three deliver after, at different latencies, and all
+of them need the `/cron` sweep running as the durability floor underneath.
+
+## events and signals <a id="events" />
+
+`events` tunes `GET /events`, the server-sent event stream the client holds instead of polling.
+`heartbeatMs` is the keepalive comment interval (keep it under any proxy idle timeout).
+`maxDurationMs` closes each stream after that long so a host with a hard response cap closes it
+cleanly instead of killing it; the client reconnects. `events: false` removes the route, and
+`notify.listRoutes()` stops listing it.
+
+Streams are capped: `maxStreamsPerUser` (10) returns a 429 with `Retry-After` to a user who
+already holds that many in this process, and `maxStreams` (5000) returns a 503 when the process
+is full. One browser holds one stream, so ten covers ten devices. A stream whose consumer stops
+reading is closed once 256 chunks are queued unread. The database probe that runs when signals are
+in-process only is shared by every stream of the same user, so tabs do not multiply queries.
+
+`signals` is how a change in one process reaches subscribers in another: the worker's wake-up,
+and every open stream. It defaults to in-memory. `postgresSignals(sql)` and `mongoSignals(db)`
+ship for multi-replica deployments; see [Wake-ups across replicas](/docs/delivery-modes#signals).
+When the signal is in-process only, each stream also compares a cheap inbox fingerprint every
+`probeIntervalMs`, so a send on another replica still shows up within that interval.
+
+`notify.inboxHeaders(userId)` returns `{ "x-easy-ping-inbox": "<version>" }` to attach to your
+own API responses, and `client.instrument(fetch)` refreshes the bell when the value moves.
+
+## notifications <a id="notifications" />
+
+Each entry is `defineNotification({ schema, channels, email? })`. `schema` is a
+[Standard Schema](https://standardschema.dev)-compatible validator — Zod, Valibot, ArkType all
+work — and it's what makes `send()`'s `payload` argument type-checked against the notification
+you're sending. `channels` lists which of the configured channels this notification type uses.
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+notifications: {
+  commentReply: defineNotification({
+    schema: z.object({ authorName: z.string(), commentId: z.string() }),
+    channels: ["inApp", "email"],
+    email: {
+      subject: (p) => `${p.authorName} replied to you`,
+      // authorName is user input: escape it, or their markup ships from your domain.
+      template: (p) =>
+        `<p>${escapeHtml(p.authorName)} replied. <a href="/c/${encodeURIComponent(p.commentId)}">View</a></p>`,
+    },
+  }),
+},
+```
+
+</CodeBlock>
+
+## plugins <a id="plugins" />
+
+An array of plugin instances — `preferences()`, `digests()`, `push({ provider, render })`, or one
+you wrote. Order matters only where `dependsOn` says it does: `digests` depends on `preferences`
+for the per-type frequency it reads. See [Writing a plugin](/docs/writing-a-plugin).
+
+## basePath and tablePrefix <a id="mounting" />
+
+Two settings that are easy to miss and break things quietly when they're wrong.
+
+**`basePath`** defaults to `/api/notifications`. It's how the handler strips its own prefix off an
+incoming URL to work out which route you asked for. Mount the handler anywhere else without
+changing it and every request resolves to the wrong route — usually a 404 on endpoints that
+plainly exist.
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+// handler mounted at /api/inbox/[...notify]
+basePath: "/api/inbox",
+```
+
+</CodeBlock>
+
+**`tablePrefix`** must match the prefix you gave the adapter. They're separate arguments, so
+nothing stops them disagreeing:
+
+<CodeBlock bare title="notify.ts">
+
+```ts
+database: drizzleAdapter(db, { prefix: "en_" }),
+tablePrefix: "en_",   // the same value — plugin tables resolve through this one
+```
+
+</CodeBlock>

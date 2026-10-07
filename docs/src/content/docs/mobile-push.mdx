@@ -1,0 +1,177 @@
+export const frontmatter = {
+  title: "Mobile push (beta)",
+  description: "Native push to iOS and Android through Expo's push service. A token registry, fan-out per device, and receipts that catch uninstalls.",
+};
+
+export const toc = [
+  { id: "how", label: "How it works" },
+  { id: "setup", label: "Provider and plugin" },
+  { id: "register", label: "Registering a device" },
+  { id: "receipts", label: "Receipts and pruning" },
+  { id: "routes", label: "Routes and tables" },
+  { id: "fcm", label: "Other services" },
+];
+
+<Note tag="Beta">
+  Mobile push is in beta while we test it across more devices and setups. APIs and defaults may
+  still change in a minor release before it is marked stable. Feedback helps:
+  [open an issue](https://github.com/teklumt/easy-ping/issues) with anything you run into.
+</Note>
+
+Phones need APNs or FCM, not web push. `mobilePush` is the channel for them: a plugin that keeps
+each user's device tokens, and a provider that sends through a push service. `expoPush` ships
+first, because Expo's service fronts both APNs and FCM with one token format and no per-platform
+credentials in development. The client half lives in [React Native](/docs/react-native).
+
+## How it works <a id="how" />
+
+1. The app asks the OS for a push token (`expo-notifications`) and registers it with
+   `POST /mobile-push/devices`. The token is bound to that account for life.
+2. `send()` to that user with `mobilePush` in the channels renders a title, body and data, and
+   the provider sends one batch to every device the user has.
+3. Expo answers with a ticket per message. "Device not registered" prunes the device on the spot.
+   Accepted tickets are kept, and `POST /mobile-push/receipts` asks Expo later whether APNs or FCM
+   actually delivered; devices that turned out to be gone are pruned then.
+
+A user with no device is `skipped`, never `failed`, the same as web push with no browser.
+
+## Provider and plugin <a id="setup" />
+
+<CodeBlock title="notify.ts">
+
+```ts
+import { mobilePush } from "easy-ping/plugins/mobile-push";
+import { expoPush } from "easy-ping/providers/expo-push";
+
+const mobile = mobilePush({
+  provider: expoPush({ accessToken: process.env.EXPO_ACCESS_TOKEN }),  // token is optional
+  render: ({ type, payload }) => {
+    const data = payload as { authorName?: string };
+    return {
+      title: "New reply",
+      body: `${data.authorName ?? "Someone"} replied to your comment`,
+      data: { screen: "thread" },       // reaches the app's tap handler, with notificationId and type added
+      badge: undefined,                  // or a number
+      sound: "default",                  // or null for silent
+      channelId: "default",              // Android notification channel
+    };
+  },
+});
+
+export const notify = easyPing({
+  // ...
+  plugins: [mobile],
+});
+```
+
+</CodeBlock>
+
+Add `"mobilePush"` to the channels of every notification type that should reach phones. Options:
+`maxDevicesPerUser` (20, evicting the least recently seen), `staleAfterDays` (180, for the prune
+route). Expo's access token is only needed if you turned on "enhanced push security" in your Expo
+account; without it, requests are unauthenticated as Expo allows.
+
+<Note tag="Android credentials">
+  Expo's service reaches Android through Firebase Cloud Messaging, so an Android build needs your
+  Firebase project's `google-services.json` and the FCM V1 service-account key uploaded with
+  `eas credentials`. iOS through Expo needs nothing extra in development. Both are Expo's
+  requirements, documented in their push setup guide; the plugin does not change with them.
+</Note>
+
+## Registering a device <a id="register" />
+
+The app obtains the token and posts it. `easy-ping/react-native` has the two calls:
+
+<CodeBlock title="App.tsx">
+
+```ts
+import * as Notifications from "expo-notifications";
+import { registerMobilePushDevice } from "easy-ping/react-native";
+
+const { data: token } = await Notifications.getExpoPushTokenAsync();
+await registerMobilePushDevice({ baseUrl, fetch: authedFetch, token, platform: "ios" });
+```
+
+</CodeBlock>
+
+Registration validates the token's shape (`ExponentPushToken[...]`), refuses a token another
+account already registered with a 409, refreshes the row when the same account registers again,
+and evicts the oldest device past the cap. `GET /mobile-push/devices` lists a user's devices for a
+settings screen, with the token's last six characters only. `unregisterMobilePushDevice` removes one.
+
+## Receipts and pruning <a id="receipts" />
+
+Expo accepts a message before APNs or FCM has seen it, so an uninstalled app is often reported
+only in the receipt, minutes later. Schedule the machine route next to your cron:
+
+<CodeBlock bare>
+
+```
+POST /api/notifications/mobile-push/receipts
+Authorization: Bearer $NOTIFY_CRON_SECRET     # or machineSecret
+```
+
+</CodeBlock>
+
+It fetches receipts for up to 1000 pending tickets, deletes devices reported gone, and forgets
+tickets older than a day, which is as long as Expo keeps them. `POST /mobile-push/prune` removes
+devices not seen for `staleAfterDays`.
+
+Ticket results are classified like every other provider: `DeviceNotRegistered` prunes,
+`MessageRateExceeded` retries, `MessageTooBig` and bad credentials fail without retry, and a 5xx or
+network error retries the whole batch. Expo's access token never appears in an error.
+
+## Routes and tables <a id="routes" />
+
+| Route | Method | Scope | Does |
+| --- | --- | --- | --- |
+| `/mobile-push/devices` | POST | user | Register `{ token, platform, deviceName? }`; 400 invalid, 409 owned elsewhere |
+| `/mobile-push/devices` | GET | user | The user's devices, tokens truncated |
+| `/mobile-push/devices/remove` | POST | user | Remove one by `{ token }` |
+| `/mobile-push/receipts` | POST | machine | Check pending tickets, prune gone devices |
+| `/mobile-push/prune` | POST | machine | Remove devices not seen for `staleAfterDays` |
+
+Two tables from `mobilePushSchema`: `notification_mobile_push_device` (unique on `token`) and
+`notification_mobile_push_ticket`:
+
+<Tabs labels={["Postgres", "MySQL", "SQLite", "MongoDB"]}>
+<CodeBlock bare>
+
+```ts
+import { mobilePushSchema } from "easy-ping/plugins/mobile-push";
+await createPostgresTables(query, { plugins: [mobilePushSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { mobilePushSchema } from "easy-ping/plugins/mobile-push";
+await createMysqlTables(query, { plugins: [mobilePushSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { mobilePushSchema } from "easy-ping/plugins/mobile-push";
+await createSqliteTables(query, { plugins: [mobilePushSchema] });
+```
+
+</CodeBlock>
+<CodeBlock bare>
+
+```ts
+import { mobilePushSchema } from "easy-ping/plugins/mobile-push";
+await createPluginIndexes(db, mobilePushSchema);   // from "easy-ping/adapters/mongodb"; idempotent
+```
+
+</CodeBlock>
+</Tabs>
+
+## Other services <a id="fcm" />
+
+The plugin talks to a `MobilePushProvider`: `isValidToken`, `send(messages)` returning one ticket
+per message, and an optional `receipts(ids)`. A direct FCM HTTP v1 or APNs provider is that
+interface plus the service's auth; the plugin, tables and routes do not change. Expo is the one
+that ships today.

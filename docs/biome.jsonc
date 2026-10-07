@@ -1,0 +1,39 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+  "root": false,
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        // global.css layers a few low-specificity rules (`td code`, `.rail a`)
+        // after higher-specificity ones (`.doc :not(pre) > code`,
+        // `.rail a.active`). In each case the overlapping declarations resolve
+        // to the same value, so the rule flags a real pattern with no real
+        // effect. Re-enable and reorder if the stylesheet grows.
+        "noDescendingSpecificity": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "files": {
+    "includes": ["**", "!public/llms.txt", "!public/llms-full.txt"]
+  }
+}

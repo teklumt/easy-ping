@@ -1,0 +1,65 @@
+/**
+ * Design tokens from the approved artifact preview. Every component reads
+ * colors, spacing and type through these — never a literal hex or px value.
+ * Changing the palette or swapping the typeface happens here and nowhere else.
+ */
+
+:root {
+  --ground: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --ink: #131820;
+  --ink-soft: #3b4453;
+  --muted: #5a6472;
+  --faint: #8892a0;
+  --border: #e2e5ea;
+  --border-soft: #edeff3;
+
+  --accent: #e0362a;
+  --accent-ink: #b5231a;
+  --accent-wash: #fdf0ee;
+
+  --sent: #0f7a57;
+  --sent-wash: #e6f4ee;
+  --pending: #a8690b;
+  --pending-wash: #fbf1df;
+  --failed: #c2362b;
+  --failed-wash: #fbecea;
+
+  --code-bg: #12161d;
+  --code-ink: #d7dde8;
+  --code-dim: #6b7688;
+  --code-key: #ff8a7a;
+  --code-str: #8fd9b6;
+  --code-fn: #9cc5ff;
+  --code-num: #e7c16b;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --measure: 68ch;
+  --radius: 6px;
+}
+
+:root[data-theme="dark"] {
+  --ground: #0e1116;
+  --surface: #151a21;
+  --surface-2: #1c222b;
+  --ink: #e9ecf2;
+  --ink-soft: #c3cad6;
+  --muted: #8f99a8;
+  --faint: #6b7585;
+  --border: #262d38;
+  --border-soft: #1e242d;
+  --accent: #ff6152;
+  --accent-ink: #ff8577;
+  --accent-wash: #2a1714;
+  --sent: #4ecfa0;
+  --sent-wash: #10241d;
+  --pending: #e0a83c;
+  --pending-wash: #261d0e;
+  --failed: #ff7a6b;
+  --failed-wash: #2a1513;
+  --code-bg: #0a0d12;
+  --code-ink: #d7dde8;
+}

@@ -9,6 +9,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "docs:dev": "pnpm --filter easy-ping-docs dev",
+    "docs:build": "pnpm --filter easy-ping-docs build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "type-budget": "turbo run type-budget",

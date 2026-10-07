@@ -1,0 +1,116 @@
+export const frontmatter = {
+  title: "React Native (beta)",
+  description: "The same client on a phone: useNotifications from easy-ping/react-native, a live stream through expo/fetch, and native push.",
+};
+
+export const toc = [
+  { id: "what", label: "What changes on a phone" },
+  { id: "hook", label: "useNotifications" },
+  { id: "auth", label: "Identity is a header" },
+  { id: "stream", label: "Keeping the live stream" },
+  { id: "push", label: "Native push" },
+  { id: "example", label: "The example app" },
+];
+
+<Note tag="Beta">
+  React Native support is in beta while we test it across more devices and setups. APIs and defaults may
+  still change in a minor release before it is marked stable. Feedback helps:
+  [open an issue](https://github.com/teklumt/easy-ping/issues) with anything you run into.
+</Note>
+
+The server does not know or care that the client is a phone. Everything on this page is about
+the client, and most of it is already handled by `easy-ping/react-native`.
+
+## What changes on a phone <a id="what" />
+
+- **Hidden means backgrounded.** `AppState` replaces `document.visibilityState`: no polling while
+  the app is in the background, an immediate refresh when it returns to the foreground.
+- **One app is one user.** There are no tabs, so there is no leader to elect and nothing to mirror.
+  The client runs as a single connection.
+- **Identity is a bearer token**, not a cookie. You add it in `fetch`; the server's `getUserId`
+  reads it. React Native sends no `Origin` header, which the CSRF check treats as same-origin.
+- **Streaming depends on the fetch.** React Native's built-in `fetch` cannot stream a response
+  body. The client detects that on the first attempt and polls instead. `expo/fetch` streams,
+  and with it the bell is as live as on the web.
+- **Web push does not exist.** Phones use the [mobile push](/docs/mobile-push) channel.
+
+## useNotifications <a id="hook" />
+
+<CodeBlock title="App.tsx">
+
+```ts
+import { useNotifications } from "easy-ping/react-native";
+
+const { notifications, unseenCount, unreadCount, markSeen, markAsRead, loadMore } =
+  useNotifications({ baseUrl: "https://app.example.com/api/notifications", fetch: authedFetch });
+```
+
+</CodeBlock>
+
+Same result shape as the web hook, same optimistic updates, same options (`limit`,
+`pollIntervalMs`, `safetyNetMs`, `transport`, …). The hook wires `AppState` for you; pass
+`appState` only to inject a fake in tests. `createNativeNotifyClient` is the hook-free version for
+other state layers.
+
+## Identity is a header <a id="auth" />
+
+<CodeBlock title="lib/fetch.ts">
+
+```ts
+import { fetch as expoFetch } from "expo/fetch";
+
+export const authedFetch: typeof globalThis.fetch = async (input, init) => {
+  const headers = new Headers(init?.headers);
+  headers.set("authorization", `Bearer ${await getSessionToken()}`);
+  return expoFetch(String(input), { ...init, headers } as never) as unknown as Response;
+};
+```
+
+</CodeBlock>
+
+On the server, `session.getUserId` verifies that header and returns the user id. Nothing else
+differs from a browser session.
+
+## Keeping the live stream <a id="stream" />
+
+`createNativeNotifyClient` tries the event stream first. With a fetch that returns a null body for
+`GET /events` it switches to polling after that one attempt, so a plain React Native `fetch` costs
+you nothing but the live updates. Pass `fetch` from `expo/fetch` (Expo SDK 52+) and the stream
+works: `changed` arrives, the client refetches, and polling drops to the five-minute safety net.
+
+`client.getTransport()` tells you which mode you ended up in.
+
+## Native push <a id="push" />
+
+<CodeBlock title="App.tsx">
+
+```ts
+import * as Notifications from "expo-notifications";
+import { registerMobilePushDevice } from "easy-ping/react-native";
+
+const { status } = await Notifications.requestPermissionsAsync();
+if (status === "granted") {
+  const { data: token } = await Notifications.getExpoPushTokenAsync();
+  await registerMobilePushDevice({ baseUrl, fetch: authedFetch, token, platform: Platform.OS === "ios" ? "ios" : "android" });
+}
+```
+
+</CodeBlock>
+
+<Note tag="Expo Go on Android">
+  Since SDK 53, Expo Go on Android throws the moment `expo-notifications` is imported, which takes
+  the whole app down before the bell renders. Import it lazily (`await import("expo-notifications")`
+  inside the enable-push handler) and hide the button when `Constants.executionEnvironment ===
+  "storeClient"` on Android. Native push there needs a development build; the bell and the live
+  stream work in Expo Go regardless. iOS Expo Go still delivers push.
+</Note>
+
+Every send with `mobilePush` in its channels then lands on the device. The `data` the plugin
+sends carries `notificationId` and `type`, so a tap handler can mark that notification read. The
+server side is on the [mobile push](/docs/mobile-push) page.
+
+## The example app <a id="example" />
+
+`examples/expo` in the library repo is a complete screen: bell, mark seen, enable and disable
+push, tap-to-read. It sits outside the pnpm workspace on purpose, so the library's install stays
+free of the native toolchain; its README says how to run it in a fresh Expo project.
