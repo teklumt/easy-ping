@@ -61,7 +61,7 @@ const telegramPlugin =
           return {
             text: `<b>${escapeHtml(data.title ?? type)}</b>\n${escapeHtml(data.body ?? "")}`,
             // Telegram refuses localhost links in buttons; point at something public.
-            button: { text: "easy-ping docs", url: "https://easy-ping.teklumoges.dev" },
+            button: { text: "easy-ping docs", url: "https://easy-pings.com" },
           };
         },
       })

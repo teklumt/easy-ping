@@ -11,8 +11,17 @@ allowBuilds:
   # so its native binary is dead weight.
   sharp: false
 
+auditConfig: { ignoreGhsas: null }
+
 # Next pins an old postcss with four open advisories (map-file disclosure). 8.5.x is API-compatible.
 overrides:
   "postcss@<8.5.23": ">=8.5.23"
   # tsup pins esbuild 0.27, which has a dev-server file-read advisory; 0.28 is API-compatible.
   esbuild: ">=0.28.1"
+  # react-devtools-core (pulled in by the react-native peer's own tooling) pins a shell-quote
+  # with a command-injection advisory.
+  shell-quote: ">=1.11.0"
+  # next (next-drizzle example) pins a postcss whose own source-map-js has an event-loop DoS advisory.
+  source-map-js: ">=1.2.2"
+  # next's optional sharp has a librsvg advisory; the example never runs it, but audit still sees it.
+  sharp: ">=0.35.5"

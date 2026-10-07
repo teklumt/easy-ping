@@ -11,7 +11,7 @@ database, with no per-notification bill.
 [![node](https://img.shields.io/node/v/easy-ping)](https://www.npmjs.com/package/easy-ping)
 [![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
 
-[Documentation](https://easy-ping.teklumoges.dev) · [Quickstart](https://easy-ping.teklumoges.dev/docs/quickstart) · [Changelog](https://easy-ping.teklumoges.dev/docs/changelog) · [AI context](https://easy-ping.teklumoges.dev/docs/ai-assistant)
+[Documentation](https://easy-pings.com) · [Quickstart](https://easy-pings.com/docs/quickstart) · [Changelog](https://easy-pings.com/docs/changelog) · [AI context](https://easy-pings.com/docs/ai-assistant)
 
 </div>
 
@@ -61,7 +61,7 @@ Every "no queue required" decision below follows from that.
 > `http_ece`; email is verified against Resend's live API, including idempotent retries and a full
 > send-to-delivered pass. The bell updates over a server-sent event stream with polling as the
 > fallback; batching is not built yet. Minor
-> versions may still move APIs before 1.0; [what is stable and how changes are announced](https://easy-ping.teklumoges.dev/docs/stability).
+> versions may still move APIs before 1.0; [what is stable and how changes are announced](https://easy-pings.com/docs/stability).
 
 ---
 
