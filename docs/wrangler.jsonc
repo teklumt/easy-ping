@@ -1,3 +1,4 @@
+// Deploys from the teklumt/easy-ping monorepo (Workers Builds, root directory: docs).
 {
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
   "name": "easy-ping-web",
