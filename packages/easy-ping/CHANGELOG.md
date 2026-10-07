@@ -1,5 +1,11 @@
 # easy-ping
 
+## 0.10.1
+
+### Patch Changes
+
+- [#26](https://github.com/teklumt/easy-ping/pull/26) [`5d29350`](https://github.com/teklumt/easy-ping/commit/5d29350ff866d5e86368a70a58b878a047a93eeb) Thanks [@teklumt](https://github.com/teklumt)! - Point package homepage to easy-pings.com and expand keywords
+
 ## 0.10.0
 
 ### Minor Changes
