@@ -10,6 +10,8 @@
  * Newest first. `date` is ISO so it sorts and formats predictably.
  */
 
+import pkg from "../../../packages/easy-ping/package.json" with { type: "json" };
+
 export type ChangeKind = "added" | "fixed" | "changed" | "security";
 
 export type Change = {
@@ -647,5 +649,5 @@ export const RELEASES: readonly Release[] = [
   },
 ];
 
-export const CURRENT_VERSION =
-  RELEASES.find((release) => release.current)?.version ?? RELEASES[0]?.version ?? "0.0.0";
+/** The library's own version, so the badge follows a release without an edit here. */
+export const CURRENT_VERSION: string = pkg.version;

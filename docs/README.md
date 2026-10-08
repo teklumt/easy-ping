@@ -57,8 +57,9 @@ Nothing forces the docs to follow the library, so these are the things to re-che
 1. **`src/lib/prompts.ts`** — the `API_CONTEXT` block is a hand-written summary of the public
    API. If a signature changed, this is the highest-value thing to update in the whole repo; see
    [The AI-context feature](#the-ai-context-feature).
-2. **The release catalog and version badge** — add the release to `RELEASES` in
-   `src/lib/releases.ts` and move `current: true` to it; `CURRENT_VERSION` follows.
+2. **The release catalog** — add the release to `RELEASES` in `src/lib/releases.ts` and move
+   `current: true` to it. The version badge needs nothing: `CURRENT_VERSION` is read from
+   `packages/easy-ping/package.json` at build time.
 3. **Any changed API surface** in the 28 pages under `src/content/docs/`.
 4. **`pnpm og`** — the social image carries the version number, so regenerate and commit it.
 
@@ -100,7 +101,7 @@ docs/
 │   ├── lib/
 │   │   ├── nav.ts              the sidebar/pager order — the one source of truth for doc order
 │   │   ├── prompts.ts          the AI-context text — the one source of truth for that
-│   │   ├── releases.ts         the changelog catalog; CURRENT_VERSION comes from here
+│   │   ├── releases.ts         the changelog catalog; CURRENT_VERSION (read from the package's package.json)
 │   │   ├── site.ts             the canonical origin and site-wide copy — the one source of truth for URLs
 │   │   ├── head.ts             per-page <head> tags, rendered statically and applied on navigation
 │   │   ├── docs-registry.ts    globs every .mdx file into a { slug: module } map

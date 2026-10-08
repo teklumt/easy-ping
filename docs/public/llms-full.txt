@@ -13,53 +13,53 @@ fetch /llms-full.txt from this same origin.
 
 ### Getting started
 
-- Introduction: /docs/introduction
-- Quickstart: /docs/quickstart
-- Configuration: /docs/configuration
-- Use with an AI assistant: /docs/ai-assistant
+- [Introduction](/docs/introduction): A framework-agnostic, type-safe, self-hosted notifications library for TypeScript.
+- [Quickstart](/docs/quickstart): A working inbox, email and push in five files. This walks the Postgres and Drizzle path. MongoDB differs only in step 2.
+- [Configuration](/docs/configuration): The full easyPing() option reference.
+- [Use with an AI assistant](/docs/ai-assistant): easy-ping shipped after every current model's training cutoff. Here's how to make Cursor or Claude write against the real API instead of an invented one.
 
 ### Core
 
-- send(): /docs/send
-- Delivery modes: /docs/delivery-modes
-- Route handler: /docs/route-handler
-- Cron sweep: /docs/cron
+- [send()](/docs/send): The one function that starts a notification. It commits the rows first, and what it waits for after that is the delivery mode's call.
+- [Delivery modes](/docs/delivery-modes): Four ways to run providers after send() returns, all sitting on the same cron sweep.
+- [Route handler](/docs/route-handler): One export mounts the whole inbox API, plus whatever routes your plugins add.
+- [Cron sweep](/docs/cron): The durability floor beneath every delivery mode. Required for cron and deferred, recommended everywhere.
 
 ### Channels
 
-- In-app inbox: /docs/in-app-inbox
-- Web push: /docs/web-push
-- Email: /docs/email
-- Telegram: /docs/telegram
-- Mobile push: /docs/mobile-push
+- [In-app inbox](/docs/in-app-inbox): Built into core — cursor pagination, a headless React hook, and seen vs. read as genuinely different states.
+- [Web push](/docs/web-push): VAPID and aes128gcm on Web Crypto — no node:crypto, so it runs on Workers and Edge, not only Node.
+- [Email](/docs/email): A Resend provider ships in the box; the EmailProvider interface is open for any other service.
+- [Telegram](/docs/telegram): A bot the user connects with one tap. Messages go to every chat they linked; blocked chats prune themselves.
+- [Mobile push](/docs/mobile-push): Native push to iOS and Android through Expo's push service. A token registry, fan-out per device, and receipts that catch uninstalls.
 
 ### Plugins
 
-- Preferences: /docs/preferences
-- Digests: /docs/digests
-- Push devices: /docs/push-plugin
-- Writing a plugin: /docs/writing-a-plugin
+- [Preferences](/docs/preferences): A per-type, per-channel opt-out center with signed unsubscribe links, as a plugin.
+- [Digests](/docs/digests): Timezone-aware batching for anyone who set their notification frequency to daily or weekly.
+- [Push devices](/docs/push-plugin): The device registry behind the push channel — registration, fan-out, and pruning.
+- [Writing a plugin](/docs/writing-a-plugin): The surface preferences, digests and push are all built on — hooks, scoped storage, and a channel of your own.
 
 ### Adapters
 
-- Postgres · any driver: /docs/postgres-adapter
-- Drizzle · Postgres: /docs/drizzle-adapter
-- MongoDB: /docs/mongodb-adapter
-- MySQL: /docs/mysql-adapter
-- SQLite: /docs/sqlite-adapter
-- Writing an adapter: /docs/writing-an-adapter
+- [Postgres · any driver](/docs/postgres-adapter): Postgres without an ORM. One function — run a parameterised statement, return rows — is the entire contract.
+- [Drizzle · Postgres](/docs/drizzle-adapter): The reference adapter — raw SQL under a Drizzle-shaped schema, with an atomic FOR UPDATE SKIP LOCKED claim.
+- [MongoDB](/docs/mongodb-adapter): The same library, the same conformance suite, no tables — just indexes.
+- [MySQL](/docs/mysql-adapter): MySQL 8 or MariaDB through any driver. The same query-function contract as Postgres, plus the row count MySQL needs because it has no RETURNING.
+- [SQLite](/docs/sqlite-adapter): SQLite through node:sqlite, better-sqlite3 or anything with the same prepare().all()/run() shape. One writer, so the claim is one UPDATE.
+- [Writing an adapter](/docs/writing-an-adapter): The DatabaseAdapter interface, and the conformance suite that proves an implementation actually holds the claim guarantee.
 
 ### Guides
 
-- React Native: /docs/react-native
-- Upgrading: /docs/upgrading
-- When something fails: /docs/failures
-- Security: /docs/security
-- Stability and versioning: /docs/stability
+- [React Native](/docs/react-native): The same client on a phone: useNotifications from easy-ping/react-native, a live stream through expo/fetch, and native push.
+- [Upgrading](/docs/upgrading): What happens to your schema when a new version adds a column, on each database path.
+- [When something fails](/docs/failures): Delivery is quiet by design. Here's how to see what actually happened.
+- [Security](/docs/security): The trust boundaries the library enforces, and the two things it can't protect you from.
+- [Stability and versioning](/docs/stability): What you can build on today without it moving, what may still change before 1.0, and how a change is announced when it does.
 
 ### Releases
 
-- Changelog: /docs/changelog
+- [Changelog](/docs/changelog): Every release, what changed in it, and why — including the bugs worth knowing about.
 
 ## Source
 
