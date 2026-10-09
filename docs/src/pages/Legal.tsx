@@ -4,7 +4,7 @@ import { Head } from "../components/Head";
 import { SITE_NAME } from "../lib/site";
 
 const EMAIL = "teklumo.jembere@gmail.com";
-const TELEGRAM = "teklumt";
+const TELEGRAM = "tsemadre";
 const UPDATED = "22 September 2026";
 
 const SECTIONS = [

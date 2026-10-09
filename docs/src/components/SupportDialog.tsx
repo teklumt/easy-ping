@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 const EMAIL = "teklumo.jembere@gmail.com";
-const TELEGRAM = "teklumt";
+const TELEGRAM = "tsemadre";
 const SUBJECT = "easy-ping";
 
 /**

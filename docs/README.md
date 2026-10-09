@@ -131,12 +131,12 @@ does:
 
 ```mdx
 export const frontmatter = {
-  title: "Page Title",              // shown as the <h1> and in the sidebar breadcrumb
-  description: "One sentence.",     // shown under the h1, in the "intro" style
+  title: "Page Title", // shown as the <h1> and in the sidebar breadcrumb
+  description: "One sentence.", // shown under the h1, in the "intro" style
 };
 
 export const toc = [
-  { id: "section-one", label: "Section One" },   // must match a heading's <a id="section-one" />
+  { id: "section-one", label: "Section One" }, // must match a heading's <a id="section-one" />
 ];
 
 ## Section One <a id="section-one" />
@@ -159,12 +159,12 @@ to match a real `<a id="...">` somewhere in the body, or that TOC link goes nowh
 These are wired into every `.mdx` file automatically via `DocPage.tsx`'s `mdxComponents` map — no
 per-file import needed:
 
-| Component | Use for |
-| --- | --- |
-| `<CodeBlock title="...">` wrapping a fence | A code sample with a filename header. This is the default way to show code. |
-| `<CodeBlock bare>` wrapping a fence | The same, with no header/border — for a snippet inline in prose. |
+| Component                                                                                         | Use for                                                                                                 |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `<CodeBlock title="...">` wrapping a fence                                                        | A code sample with a filename header. This is the default way to show code.                             |
+| `<CodeBlock bare>` wrapping a fence                                                               | The same, with no header/border — for a snippet inline in prose.                                        |
 | `<Tabs labels={["A", "B"]}><CodeBlock bare>...</CodeBlock><CodeBlock bare>...</CodeBlock></Tabs>` | Switching between equivalent code paths (see `quickstart.mdx` for the Drizzle/Raw SQL/MongoDB example). |
-| `<Note tag="Heads up">...</Note>` | A callout for anything a reader must not skim past. Keep `tag` to one or two words. |
+| `<Note tag="Heads up">...</Note>`                                                                 | A callout for anything a reader must not skim past. Keep `tag` to one or two words.                     |
 
 If a page needs something none of these cover — `ai-assistant.mdx` does this — you can `import`
 a real component at the top of the `.mdx` file, same as any other module:
@@ -182,7 +182,7 @@ import { PromptSection } from "../../components/PromptSection";
 The code goes in a fence, wrapped in a `<CodeBlock>` — blank lines around the fence, and the
 fence itself at column 0:
 
-```mdx
+````mdx
 <CodeBlock title="notify.ts">
 
 ```ts
@@ -190,6 +190,7 @@ export const notify = easyPing({
   database: postgresAdapter(query),
 });
 ```
+````
 
 </CodeBlock>
 ```
@@ -239,7 +240,7 @@ the conversation first — and this site is where that context lives.
 
 **`src/lib/prompts.ts` is the single source of truth.** It exports `API_CONTEXT` (the shared API
 reference block) and `PROMPTS` (four task-specific prompts, each built on top of `API_CONTEXT`).
-Both the copy buttons on the site *and* the two static files below are generated from this one
+Both the copy buttons on the site _and_ the two static files below are generated from this one
 file — nothing is duplicated by hand.
 
 **`scripts/generate-llms.mjs`** imports `prompts.ts` directly using Node's native TypeScript
@@ -275,13 +276,13 @@ The topbar's **Support** button opens `src/components/SupportDialog.tsx` — a n
 top of that file; **that's the only place to change them**:
 
 ```ts
-const EMAIL = "teklumo.jembere@gmail.com";   // opens mailto: with a prefilled subject
-const TELEGRAM = "teklumt";                   // opens https://t.me/<handle>
+const EMAIL = "teklumo.jembere@gmail.com"; // opens mailto: with a prefilled subject
+const TELEGRAM = "tsemadre"; // opens https://t.me/<handle>
 ```
 
 It uses `showModal()` rather than a hand-rolled div, which brings Escape-to-close, focus
 containment and an inert background for free. Click-outside-to-close is bound as a native
-listener in a `useEffect` (a click landing on the dialog element itself *is* a backdrop click) —
+listener in a `useEffect` (a click landing on the dialog element itself _is_ a backdrop click) —
 not as a JSX `onClick`, which would trip an a11y lint rule that can't tell the two apart.
 
 Bear in mind the email address is published in plain text in the built bundle, so it will be
@@ -317,11 +318,11 @@ Error: listen EACCES: permission denied ::1:5173
 ```
 
 That reads like a filesystem permissions problem. It isn't — the OS has reserved the port.
-Note it's `EACCES`, not `EADDRINUSE`: nothing is *using* the port, and Vite's "try the next
+Note it's `EACCES`, not `EADDRINUSE`: nothing is _using_ the port, and Vite's "try the next
 port" fallback only handles `EADDRINUSE`, so it can't recover on its own.
 
 **Why it happens, and why it looks random.** Hyper-V and Docker Desktop reserve blocks of ports
-out of the Windows *dynamic port range*, and those blocks get reshuffled on every reboot — a
+out of the Windows _dynamic port range_, and those blocks get reshuffled on every reboot — a
 port that worked yesterday can fail today. Check both the range and the current reservations:
 
 ```bash
@@ -363,12 +364,12 @@ description and path. `src/lib/head.ts` turns that into title, description, cano
 Open Graph, Twitter card and JSON-LD tags: captured into the static HTML at build time, applied to
 the live document on client-side navigation. What each page emits:
 
-| Page | Title | Structured data |
-| --- | --- | --- |
-| Landing | `easy-ping — Self-hosted notifications for TypeScript` | `SoftwareApplication` (version, MIT, npm, free) + `WebSite` |
-| Doc page | `<frontmatter.title> · easy-ping docs` | `TechArticle` + `BreadcrumbList` (site › Docs › group › page) |
-| Legal | `Legal · easy-ping` | none |
-| 404 | `Page not found · easy-ping` | none; `noindex, nofollow` |
+| Page     | Title                                                  | Structured data                                               |
+| -------- | ------------------------------------------------------ | ------------------------------------------------------------- |
+| Landing  | `easy-ping — Self-hosted notifications for TypeScript` | `SoftwareApplication` (version, MIT, npm, free) + `WebSite`   |
+| Doc page | `<frontmatter.title> · easy-ping docs`                 | `TechArticle` + `BreadcrumbList` (site › Docs › group › page) |
+| Legal    | `Legal · easy-ping`                                    | none                                                          |
+| 404      | `Page not found · easy-ping`                           | none; `noindex, nofollow`                                     |
 
 **The canonical origin lives in one place**, `src/lib/site.ts`. Canonicals, `og:url`, the sitemap
 and `robots.txt`'s `Sitemap:` line all derive from it (robots.txt is static; update it by hand
