@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 const EMAIL = "teklumo.jembere@gmail.com";
-const TELEGRAM = "teklumt";
+const TELEGRAM = "tsemadre";
 const SUBJECT = "easy-ping";
 
 /**
@@ -32,7 +32,11 @@ export function SupportDialog() {
 
   return (
     <>
-      <button type="button" className="support-trigger" onClick={() => ref.current?.showModal()}>
+      <button
+        type="button"
+        className="support-trigger"
+        onClick={() => ref.current?.showModal()}
+      >
         Support
       </button>
 
@@ -51,7 +55,8 @@ export function SupportDialog() {
           </div>
 
           <p className="support-lede">
-            Questions, bug reports, or anything about easy-ping. Either of these reaches me.
+            Questions, bug reports, or anything about easy-ping. Either of these
+            reaches me.
           </p>
 
           <a
@@ -74,7 +79,11 @@ export function SupportDialog() {
 
           <p className="support-foot">
             For anything others would benefit from, a{" "}
-            <a href="https://github.com/teklumt/easy-ping/issues" target="_blank" rel="noreferrer">
+            <a
+              href="https://github.com/teklumt/easy-ping/issues"
+              target="_blank"
+              rel="noreferrer"
+            >
               GitHub issue
             </a>{" "}
             is better than a DM, because it's searchable.
