@@ -8,5 +8,7 @@ export const OG_IMAGE = `${SITE_URL}/og.png`;
 export const AUTHOR = { name: "Teklu Moges", url: "https://github.com/teklumt" };
 export const REPO_URL = "https://github.com/teklumt/easy-ping";
 export const NPM_URL = "https://www.npmjs.com/package/easy-ping";
+export const DISCORD_URL = "https://discord.gg/bJ5wGFD3H";
+export const CONTACT_EMAIL = "main@easy-pings.com";
 
 export const absolute = (path: string) => `${SITE_URL}${path === "/" ? "" : path}`;

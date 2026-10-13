@@ -65,3 +65,4 @@ fetch /llms-full.txt from this same origin.
 
 - npm: https://www.npmjs.com/package/easy-ping
 - Repository: https://github.com/teklumt/easy-ping
+- Discord: https://discord.gg/bJ5wGFD3H

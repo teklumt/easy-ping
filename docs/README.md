@@ -272,12 +272,13 @@ fix to this one.
 ## The support dialog
 
 The topbar's **Support** button opens `src/components/SupportDialog.tsx` — a native
-`<dialog>` with the two ways to reach the maintainer. The contact details are constants at the
-top of that file; **that's the only place to change them**:
+`<dialog>` with the two ways to reach the maintainer: email and the Discord server. The contact
+details are constants in `src/lib/site.ts`, shared with the footer, the legal page and
+`llms.txt`; **that's the only place to change them**:
 
 ```ts
-const EMAIL = "teklumo.jembere@gmail.com"; // opens mailto: with a prefilled subject
-const TELEGRAM = "tsemadre"; // opens https://t.me/<handle>
+export const DISCORD_URL = "https://discord.gg/bJ5wGFD3H";
+export const CONTACT_EMAIL = "main@easy-pings.com"; // opens mailto: with a prefilled subject
 ```
 
 It uses `showModal()` rather than a hand-rolled div, which brings Escape-to-close, focus

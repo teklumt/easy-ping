@@ -10,8 +10,11 @@ database, with no per-notification bill.
 [![install size](https://packagephobia.com/badge?p=easy-ping)](https://packagephobia.com/result?p=easy-ping)
 [![node](https://img.shields.io/node/v/easy-ping)](https://www.npmjs.com/package/easy-ping)
 [![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
+[![discord](https://img.shields.io/badge/discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/bJ5wGFD3H)
 
 [Documentation](https://easy-pings.com) · [Quickstart](https://easy-pings.com/docs/quickstart) · [Changelog](https://easy-pings.com/docs/changelog) · [AI context](https://easy-pings.com/docs/ai-assistant)
+
+**Community:** questions and help on [Discord](https://discord.gg/bJ5wGFD3H) · bugs and feature requests on [GitHub issues](https://github.com/teklumt/easy-ping/issues)
 
 </div>
 

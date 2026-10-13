@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Questions and help → Discord"
+    url: https://discord.gg/bJ5wGFD3H
+    about: Ask how to use easy-ping, or get help with your setup. Bugs and feature requests belong in a GitHub issue.
