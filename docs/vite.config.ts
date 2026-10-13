@@ -12,6 +12,8 @@ import { defineConfig } from "vite";
 // (see content authoring in the README) rather than a `{#id}` convention:
 // MDX parses every `{...}` in the document as a JS expression, including
 // inside headings, so a bare `{#id}` fails to compile as JSX.
+const BROWSER_TARGET = ["chrome107", "edge107", "firefox104", "safari16"];
+
 export default defineConfig({
   plugins: [{ enforce: "pre", ...mdx({ remarkPlugins: [remarkGfm] }) }, react()],
 
@@ -32,5 +34,8 @@ export default defineConfig({
 
   // The monorepo overrides esbuild to >=0.28, which can no longer lower syntax
   // to Vite 6's default targets (safari14 and friends). These are Vite 7's defaults.
-  build: { target: ["chrome107", "edge107", "firefox104", "safari16"] },
+  // The dev server's dependency pre-bundler has its own copy of that default, so it
+  // needs the same target as the build.
+  build: { target: BROWSER_TARGET },
+  optimizeDeps: { esbuildOptions: { target: BROWSER_TARGET } },
 });

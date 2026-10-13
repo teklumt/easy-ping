@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { DISCORD_URL } from "../lib/site";
 import { Logo } from "./Logo";
 
 export function Footer() {
@@ -14,6 +15,9 @@ export function Footer() {
         </a>
         <a href="https://www.npmjs.com/package/easy-ping" target="_blank" rel="noreferrer">
           npm
+        </a>
+        <a href={DISCORD_URL} target="_blank" rel="noreferrer">
+          Discord
         </a>
         <a href="/llms.txt" target="_blank" rel="noreferrer">
           llms.txt

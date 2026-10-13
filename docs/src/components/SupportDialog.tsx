@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
+import { CONTACT_EMAIL, DISCORD_URL } from "../lib/site";
 
-const EMAIL = "teklumo.jembere@gmail.com";
-const TELEGRAM = "tsemadre";
 const SUBJECT = "easy-ping";
 
 /**
@@ -56,20 +55,15 @@ export function SupportDialog() {
 
           <a
             className="support-row"
-            href={`mailto:${EMAIL}?subject=${encodeURIComponent(SUBJECT)}`}
+            href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(SUBJECT)}`}
           >
             <span className="support-kind">Email</span>
-            <span className="support-value">{EMAIL}</span>
+            <span className="support-value">{CONTACT_EMAIL}</span>
           </a>
 
-          <a
-            className="support-row"
-            href={`https://t.me/${TELEGRAM}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="support-kind">Telegram</span>
-            <span className="support-value">@{TELEGRAM}</span>
+          <a className="support-row" href={DISCORD_URL} target="_blank" rel="noreferrer">
+            <span className="support-kind">Discord</span>
+            <span className="support-value">{DISCORD_URL.replace("https://", "")}</span>
           </a>
 
           <p className="support-foot">

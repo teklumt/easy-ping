@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isLinked, NAV } from "../src/lib/nav.ts";
 import { API_CONTEXT, PROMPTS } from "../src/lib/prompts.ts";
+import { DISCORD_URL } from "../src/lib/site.ts";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const publicDir = join(root, "public");
@@ -56,6 +57,7 @@ ${DOCS}
 
 - npm: https://www.npmjs.com/package/easy-ping
 - Repository: https://github.com/teklumt/easy-ping
+- Discord: ${DISCORD_URL}
 `;
 
 // Every task prompt's specifics (web push, Telegram, React Native, MongoDB, plugins) belong in the

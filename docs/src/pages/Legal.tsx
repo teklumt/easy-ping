@@ -1,10 +1,8 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Head } from "../components/Head";
-import { SITE_NAME } from "../lib/site";
+import { CONTACT_EMAIL, SITE_NAME } from "../lib/site";
 
-const EMAIL = "teklumo.jembere@gmail.com";
-const TELEGRAM = "tsemadre";
 const UPDATED = "22 September 2026";
 
 const SECTIONS = [
@@ -167,11 +165,8 @@ export function Legal() {
         <p>Anything on this page, or anything else about the project:</p>
         <ul className="legal-contact">
           <li>
-            <a href={`mailto:${EMAIL}?subject=${encodeURIComponent("easy-ping")}`}>{EMAIL}</a>
-          </li>
-          <li>
-            <a href={`https://t.me/${TELEGRAM}`} target="_blank" rel="noreferrer">
-              Telegram @{TELEGRAM}
+            <a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("easy-ping")}`}>
+              {CONTACT_EMAIL}
             </a>
           </li>
           <li>
