@@ -5,7 +5,9 @@ import {
   House,
   Inbox,
   Mail,
+  PenSquare,
   RotateCcw,
+  Search,
   Send,
   Settings,
   Smartphone,
@@ -19,17 +21,24 @@ const SNIPPET = `await notify.send("commentReply", {
 });`;
 
 // When each channel shows up after Send, in ms. Simulated: nothing leaves the browser.
-const ARRIVALS = { inApp: 500, push: 1200, email: 1900 } as const;
+const ARRIVALS = { inApp: 500, push: 1200, email: 1900, telegram: 2600 } as const;
 type Channel = keyof typeof ARRIVALS;
 
 const CHANNELS: { id: Channel; label: string; icon: typeof Bell }[] = [
   { id: "inApp", label: "In-app", icon: Bell },
   { id: "push", label: "Web push", icon: Smartphone },
   { id: "email", label: "Email", icon: Mail },
+  { id: "telegram", label: "Telegram", icon: Send },
 ];
 
-const NONE: Record<Channel, boolean> = { inApp: false, push: false, email: false };
-const ALL: Record<Channel, boolean> = { inApp: true, push: true, email: true };
+const NONE: Record<Channel, boolean> = {
+  inApp: false,
+  push: false,
+  email: false,
+  telegram: false,
+};
+const ALL: Record<Channel, boolean> = { inApp: true, push: true, email: true, telegram: true };
+const LAST = Math.max(...Object.values(ARRIVALS));
 
 const reducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -59,7 +68,7 @@ export function DeviceDemo() {
         setTimeout(() => setArrived((current) => ({ ...current, [channel]: true })), delay),
       );
     }
-    timers.current.push(setTimeout(() => setSending(false), ARRIVALS.email));
+    timers.current.push(setTimeout(() => setSending(false), LAST));
   }
 
   // Plays once when the demo scrolls into view. Effects never run while prerendering.
@@ -83,7 +92,7 @@ export function DeviceDemo() {
     };
   }, []);
 
-  const done = arrived.email;
+  const done = arrived.telegram;
   const unread = arrived.inApp && !read;
 
   return (
@@ -119,7 +128,7 @@ export function DeviceDemo() {
 
           <p className="demo-note" role="status">
             {done
-              ? "Delivered to all three. Simulated in your browser; nothing was sent."
+              ? "Delivered to all four. Simulated in your browser; nothing was sent."
               : "Simulated in your browser. Nothing is sent."}
           </p>
         </div>
@@ -218,6 +227,19 @@ export function DeviceDemo() {
               </span>
             </div>
           )}
+
+          {arrived.telegram && (
+            <div className="tg-toast">
+              <span className="tg-icon">
+                <Send size={15} aria-hidden="true" />
+              </span>
+              <span className="toast-text">
+                <small>Telegram · Acme Bot · now</small>
+                <strong>Dana replied to your comment</strong>
+                <span>"Looks good. Let's ship it!"</span>
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="device-phone">
@@ -228,8 +250,14 @@ export function DeviceDemo() {
               <span>5G</span>
             </div>
             <div className="mail-head">
-              <strong>Inbox</strong>
-              <span>{done ? "1 new" : "Up to date"}</span>
+              <span className="mail-app">
+                <Mail size={13} aria-hidden="true" />
+                Mail
+              </span>
+              <span className="mail-title">
+                <strong>Inbox</strong>
+                <span>{arrived.email ? "1 new" : "Up to date"}</span>
+              </span>
             </div>
             <ul className="mail-list">
               {arrived.email && (
@@ -262,6 +290,20 @@ export function DeviceDemo() {
                 <small>Sep 2</small>
               </li>
             </ul>
+            <div className="mail-tabs" aria-hidden="true">
+              <span className="is-active">
+                <Mail size={18} />
+                Mail
+              </span>
+              <span>
+                <Search size={18} />
+                Search
+              </span>
+              <span>
+                <PenSquare size={18} />
+                Compose
+              </span>
+            </div>
           </div>
         </div>
       </div>

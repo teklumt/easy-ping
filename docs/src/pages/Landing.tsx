@@ -175,7 +175,7 @@ export function Landing() {
             </span>
             <span>
               <strong>Delivered</strong>
-              <small>in-app · email · push</small>
+              <small>in-app · email · push · Telegram</small>
             </span>
           </div>
         </div>
@@ -187,8 +187,8 @@ export function Landing() {
           One <code>send()</code>. Every screen.
         </h2>
         <p className="sec-sub">
-          Press send. The bell updates, a push notification appears, and the email lands on the
-          phone.
+          Press send. The bell updates, a push notification appears, the email lands on the phone,
+          and a Telegram message follows.
         </p>
         <DeviceDemo />
       </section>

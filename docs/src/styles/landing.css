@@ -726,6 +726,8 @@ h1.display {
   animation: drift 7s ease-in-out infinite;
 }
 .phone-screen {
+  display: flex;
+  flex-direction: column;
   height: 470px;
   overflow: hidden;
   border-radius: 31px;
@@ -746,20 +748,33 @@ h1.display {
   background: var(--device-frame);
 }
 .mail-head {
+  display: grid;
+  gap: 4px;
+  padding: 8px 16px 12px;
+}
+.mail-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--mail);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mail-title {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 10px 16px 12px;
 }
 .mail-head strong {
   font-size: 22px;
   letter-spacing: -0.03em;
 }
-.mail-head span {
+.mail-title span {
   color: var(--muted);
   font-size: 12px;
 }
 .mail-list {
+  flex: 1;
   margin: 0;
   padding: 0 8px;
   list-style: none;
@@ -811,6 +826,51 @@ h1.display {
 .mail-row small {
   color: var(--faint);
   font-size: 11px;
+}
+.mail-tabs {
+  display: flex;
+  justify-content: space-around;
+  padding: 8px 8px 18px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--surface-2);
+}
+.mail-tabs span {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 500;
+}
+.mail-tabs .is-active {
+  color: var(--mail);
+}
+
+/* Telegram: the bot's message in the desktop's bottom-right corner, where Telegram Desktop
+   shows its notifications; clear of the bell's dropdown and of the phone overlapping the edge. */
+.tg-toast {
+  position: absolute;
+  right: 48px;
+  bottom: 20px;
+  z-index: 2;
+  display: flex;
+  gap: 12px;
+  width: min(320px, calc(100% - 24px));
+  padding: 14px 16px 14px 14px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  animation: rise 300ms var(--ease-enter) both;
+}
+.tg-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--telegram);
+  color: var(--on-telegram);
 }
 
 /* ---------- features, stack, AI, comparison, closing ---------- */
@@ -1246,6 +1306,12 @@ h1.display {
   .push-toast {
     bottom: auto;
     top: 116px;
+    left: 16px;
+  }
+  .tg-toast {
+    right: auto;
+    bottom: auto;
+    top: 206px;
     left: 16px;
   }
 }

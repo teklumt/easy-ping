@@ -84,6 +84,10 @@
   --accent-fill: #d42e22;
   --on-accent: #ffffff;
 
+  --telegram: #229ed9;
+  --on-telegram: #ffffff;
+  --mail: #1a73e8;
+
   --device-frame: #0a0a0b;
   --code-rule: rgb(255 255 255 / 0.08);
 
@@ -114,6 +118,7 @@
 
   --accent-fill: #ff6152;
   --on-accent: #0a0a0a;
+  --mail: #6ea8fe;
 
   --shadow-ring: rgba(255, 255, 255, 0.08) 0 0 0 1px;
   --shadow-1: rgba(255, 255, 255, 0.06) 0 0 0 1px, rgba(0, 0, 0, 0.7) 0 10px 24px -12px;
