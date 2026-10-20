@@ -7,7 +7,7 @@ In-app inbox, transactional email, web push and Telegram — running inside your
 database, with no per-notification bill.
 
 [![npm](https://img.shields.io/npm/v/easy-ping?color=%23e0362a&label=npm)](https://www.npmjs.com/package/easy-ping)
-[![install size](https://packagephobia.com/badge?p=easy-ping)](https://packagephobia.com/result?p=easy-ping)
+[![unpacked size](https://img.shields.io/npm/unpacked-size/easy-ping)](https://www.npmjs.com/package/easy-ping)
 [![node](https://img.shields.io/node/v/easy-ping)](https://www.npmjs.com/package/easy-ping)
 [![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
 [![discord](https://img.shields.io/badge/discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/bJ5wGFD3H)
