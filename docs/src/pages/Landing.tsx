@@ -1,10 +1,12 @@
+import { Bell, Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { CodeBlock } from "../components/CodeBlock";
 import { Comparison } from "../components/Comparison";
+import { DeviceDemo } from "../components/DeviceDemo";
 import { Features } from "../components/Features";
 import { Head } from "../components/Head";
 import { InstallLine } from "../components/InstallLine";
-import { NotificationDemo } from "../components/NotificationDemo";
 import { PromptSection } from "../components/PromptSection";
 import { CURRENT_VERSION } from "../lib/releases";
 import {
@@ -19,6 +21,12 @@ import {
 import "../styles/landing.css";
 
 const BADGES = [`v${CURRENT_VERSION}`, "MIT", "1 runtime dep", "no services to run"];
+
+const HERO_SNIPPET = `await notify.send("commentReply", {
+  to: threadOwnerId,
+  payload: { authorName: "Dana", commentId: "c_123" },
+  dedupeKey: "commentReply:c_123",
+});`;
 
 const MODES = [
   {
@@ -114,47 +122,81 @@ export function Landing() {
         jsonLd={JSON_LD}
       />
       <section className="wrap hero">
-        <p className="eyebrow">Open-source notifications for TypeScript</p>
-        <h1 className="display">
-          easy-ping<span className="hero-period">.</span>
-        </h1>
-        <p className="hero-offer">Add an inbox, email, and push notifications to your app.</p>
-        <p className="lede">
-          Send a notification once. Deliver it across the channels you choose, respect user
-          preferences, and keep the data in your own database.
-        </p>
+        <div className="hero-copy">
+          <p className="eyebrow">Open-source notifications for TypeScript</p>
+          <h1 className="display">
+            easy-ping<span className="hero-period">.</span>
+          </h1>
+          <p className="hero-offer">Add an inbox, email, and push notifications to your app.</p>
+          <p className="lede">
+            Send once. Deliver to every channel you choose. Respect user preferences. Keep the data
+            in your own database.
+          </p>
 
-        <div className="cta-row">
-          <Link className="btn btn-primary" to="/docs/quickstart">
-            Get started
-          </Link>
-          <a className="btn btn-ghost" href="#demo">
-            See it in action
-          </a>
+          <div className="cta-row">
+            <Link className="btn btn-primary" to="/docs/quickstart">
+              Get started
+            </Link>
+            <a className="btn btn-ghost" href="#demo">
+              See it in action
+            </a>
+          </div>
+
+          <InstallLine command="pnpm add easy-ping" />
+
+          <ul className="badges">
+            {BADGES.map((badge) => (
+              <li key={badge}>{badge}</li>
+            ))}
+          </ul>
+
+          <p className="hero-channels">
+            In-app inbox <span>/</span> Email <span>/</span> Web push <span>/</span> Telegram{" "}
+            <span>/</span> Mobile push <span className="hero-beta">beta</span>
+          </p>
         </div>
 
-        <InstallLine command="pnpm add easy-ping" />
-
-        <ul className="badges">
-          {BADGES.map((badge) => (
-            <li key={badge}>{badge}</li>
-          ))}
-        </ul>
-
-        <p className="hero-channels">
-          In-app inbox <span>/</span> Email <span>/</span> Web push <span>/</span> Telegram{" "}
-          <span>/</span> Mobile push <span className="hero-beta">beta</span>
-        </p>
+        <div className="hero-art">
+          <div className="hero-code">
+            <CodeBlock title="app/api/comments/route.ts">{HERO_SNIPPET}</CodeBlock>
+          </div>
+          <div className="float-card float-toast" aria-hidden="true">
+            <span className="float-icon">
+              <Bell size={16} />
+            </span>
+            <span>
+              <strong>Dana replied to your comment</strong>
+              <small>"Looks good. Let's ship it!"</small>
+            </span>
+          </div>
+          <div className="float-card float-delivered" aria-hidden="true">
+            <span className="float-check">
+              <Check size={14} />
+            </span>
+            <span>
+              <strong>Delivered</strong>
+              <small>in-app · email · push</small>
+            </span>
+          </div>
+        </div>
       </section>
 
-      <div className="wrap">
-        <NotificationDemo />
-      </div>
+      <section className="wrap section demo-section" id="demo" aria-labelledby="demo-title">
+        <p className="sec-eyebrow">See it work</p>
+        <h2 className="sec" id="demo-title">
+          One <code>send()</code>. Every screen.
+        </h2>
+        <p className="sec-sub">
+          Press send. The bell updates, a push notification appears, and the email lands on the
+          phone.
+        </p>
+        <DeviceDemo />
+      </section>
 
       <Section
         eyebrow="From your first bell to every channel"
         title="What you can build"
-        sub="Start with the inbox. Add channels, preferences, and digests as your app grows."
+        sub="Start with the inbox. Add channels, preferences, and digests as you grow."
       >
         <Features />
       </Section>
@@ -176,7 +218,7 @@ export function Landing() {
       <Section
         eyebrow="How it compares"
         title="A library, not another service to run"
-        sub="The alternatives are good, and most of them are a platform. This one is a dependency, and that difference decides almost everything else."
+        sub="The alternatives are good, and most are platforms you run. easy-ping is a dependency you install. That difference decides almost everything else."
         id="compare"
       >
         <Comparison />
@@ -185,7 +227,7 @@ export function Landing() {
       <Section
         eyebrow="Delivery"
         title="Four ways to deliver, one durability floor"
-        sub="Persist first, then deliver. Database-backed retries and at-least-once delivery, with no separate queue service required."
+        sub="Persist first, then deliver. Retries live in your database. Delivery is at-least-once, with no queue service to run."
       >
         <div className="panel">
           <div className="tablewrap">
@@ -223,8 +265,8 @@ export function Landing() {
         <div className="closing">
           <h2>Ship it this afternoon.</h2>
           <p>
-            Schema, config, one <code>send()</code>, and the bell. The quickstart is the whole
-            thing, in order, with the gotchas called out.
+            Schema, config, one <code>send()</code>, and the bell. The quickstart covers it in
+            order, gotchas included.
           </p>
           <div className="cta-row">
             <Link className="btn btn-primary" to="/docs/quickstart">

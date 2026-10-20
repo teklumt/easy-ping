@@ -63,3 +63,59 @@
   --code-bg: #0a0d12;
   --code-ink: #d7dde8;
 }
+
+/*
+ * The landing page only: white ground, DM Sans, pill controls, 18px cards and soft neutral
+ * shadows, with easy-ping's red as the accent.
+ * --accent-fill is the red buttons are filled with: #e0362a under white text is 4.44:1, so
+ * filled buttons use a slightly deeper red that clears 4.5:1.
+ */
+.landing {
+  --ground: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f6f6f7;
+  --ink: #030712;
+  --ink-soft: #374151;
+  --muted: #4b5563;
+  --faint: #6b7280;
+  --border: #ededed;
+  --border-soft: #f3f4f6;
+
+  --accent-fill: #d42e22;
+  --on-accent: #ffffff;
+
+  --device-frame: #0a0a0b;
+  --code-rule: rgb(255 255 255 / 0.08);
+
+  --sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-sm: 10px;
+  --radius-card: 18px;
+  --radius-panel: 28px;
+  --shadow-ring: rgba(0, 0, 0, 0.08) 0 0 0 1px;
+  --shadow-1: rgba(0, 0, 0, 0.05) 0 0 0 1px, rgba(23, 23, 26, 0.35) 0 10px 24px -12px;
+  --shadow-2: rgba(0, 0, 0, 0.05) 0 0 0 1px, rgba(23, 23, 26, 0.35) 0 12px 30px -14px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Near-black ground and neutral shadows. The greys are chosen to stay readable: #6b7280 on
+   #0a0a0a would only reach ~4.1:1. */
+:root[data-theme="dark"] .landing {
+  --ground: #0a0a0a;
+  --surface: #141416;
+  --surface-2: #1c1c1f;
+  --ink: #f4f4f5;
+  --ink-soft: #d4d4d8;
+  --muted: #a1a1aa;
+  --faint: #8b8b93;
+  --border: #26262a;
+  --border-soft: #1f1f23;
+
+  --accent-fill: #ff6152;
+  --on-accent: #0a0a0a;
+
+  --shadow-ring: rgba(255, 255, 255, 0.08) 0 0 0 1px;
+  --shadow-1: rgba(255, 255, 255, 0.06) 0 0 0 1px, rgba(0, 0, 0, 0.7) 0 10px 24px -12px;
+  --shadow-2: rgba(255, 255, 255, 0.06) 0 0 0 1px, rgba(0, 0, 0, 0.75) 0 12px 30px -14px;
+}
