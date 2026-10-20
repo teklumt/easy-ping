@@ -9,7 +9,6 @@ export const toc = [
   { id: "auth", label: "Identity is a header" },
   { id: "stream", label: "Keeping the live stream" },
   { id: "push", label: "Native push" },
-  { id: "example", label: "The example app" },
 ];
 
 <Note tag="Beta">
@@ -108,9 +107,3 @@ if (status === "granted") {
 Every send with `mobilePush` in its channels then lands on the device. The `data` the plugin
 sends carries `notificationId` and `type`, so a tap handler can mark that notification read. The
 server side is on the [mobile push](/docs/mobile-push) page.
-
-## The example app <a id="example" />
-
-`examples/expo` in the library repo is a complete screen: bell, mark seen, enable and disable
-push, tap-to-read. It sits outside the pnpm workspace on purpose, so the library's install stays
-free of the native toolchain; its README says how to run it in a fresh Expo project.

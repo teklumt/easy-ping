@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>easy-ping · Express + SQLite</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <span class="brand"><span class="mark">a</span>Acme</span>
+      <span class="who">signed in as <strong id="who"></strong></span>
+      <div class="bell-wrap">
+        <button type="button" class="bell" id="bell" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+          </svg>
+          <span class="sr-only">Notifications</span>
+          <span class="badge" id="badge" hidden></span>
+        </button>
+
+        <section class="inbox" id="inbox" hidden aria-label="Notifications">
+          <div class="inbox-head">
+            <strong>Notifications</strong>
+            <button type="button" class="link" id="read-all">Mark all read</button>
+          </div>
+          <ul id="feed"></ul>
+          <p class="empty" id="empty">Nothing yet. Send yourself a message.</p>
+        </section>
+      </div>
+    </header>
+
+    <main>
+      <h1>Send a notification</h1>
+      <p class="lede">
+        One <code>send()</code> reaches the bell, a push notification and an email. Open
+        <a id="other" href="/?user=dana" target="_blank">a second window as dana</a> to watch one
+        arrive somewhere else.
+      </p>
+
+      <form class="card" id="composer">
+        <label>
+          To
+          <select id="to">
+            <option>you</option>
+            <option>dana</option>
+            <option>sam</option>
+          </select>
+        </label>
+        <label class="grow">
+          Message
+          <input id="text" maxlength="280" placeholder="The deploy is green" required />
+        </label>
+        <button type="submit" class="primary">Send</button>
+      </form>
+
+      <section class="channels" aria-label="What arrived">
+        <article class="channel">
+          <div class="channel-head">
+            <h2>In-app</h2>
+            <span class="pill" id="inapp-pill">0 unseen</span>
+          </div>
+          <p>The bell, top right. Opening it clears the badge; clicking an item marks it read.</p>
+          <p class="mono" id="transport">connecting…</p>
+        </article>
+
+        <article class="channel">
+          <div class="channel-head">
+            <h2>Web push</h2>
+            <span class="pill" id="push-pill">checking…</span>
+          </div>
+          <p id="push-help">
+            Enable it, send yourself a message, then look outside this tab: it arrives as a system
+            notification.
+          </p>
+          <button type="button" class="secondary" id="push-toggle" hidden></button>
+        </article>
+
+        <article class="channel">
+          <div class="channel-head">
+            <h2>Email</h2>
+            <span class="pill" id="email-pill">0 received</span>
+          </div>
+          <p>
+            Rendered from the notification's email template and handed to an outbox provider that
+            keeps it here instead of sending it.
+          </p>
+          <ul class="emails" id="emails"></ul>
+        </article>
+      </section>
+
+      <ol class="log" id="log"></ol>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

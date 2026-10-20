@@ -12,7 +12,7 @@ database, with no per-notification bill.
 [![license](https://img.shields.io/npm/l/easy-ping?color=blue)](./LICENSE)
 [![discord](https://img.shields.io/badge/discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/bJ5wGFD3H)
 
-[Documentation](https://easy-pings.com) · [Quickstart](https://easy-pings.com/docs/quickstart) · [Changelog](https://easy-pings.com/docs/changelog) · [AI context](https://easy-pings.com/docs/ai-assistant)
+[Documentation](https://easy-pings.com) · [Quickstart](https://easy-pings.com/docs/quickstart) · [Changelog](https://easy-pings.com/docs/changelog) · [AI context](https://easy-pings.com/docs/ai-assistant) · [Examples](https://github.com/teklumt/easy-ping/tree/main/examples)
 
 **Community:** questions and help on [Discord](https://discord.gg/bJ5wGFD3H) · bugs and feature requests on [GitHub issues](https://github.com/teklumt/easy-ping/issues)
 
@@ -320,7 +320,7 @@ import { handlePush } from "easy-ping/sw";
 self.addEventListener("push", (event) => event.waitUntil(handlePush(event)));
 ```
 
-**React Native (beta, under testing).** The same client ships as `easy-ping/react-native`: `useNotifications` wired to `AppState`, a live stream when you pass `fetch` from `expo/fetch`, polling otherwise, and `registerMobilePushDevice` for native push. `examples/expo` is a complete screen.
+**React Native (beta, under testing).** The same client ships as `easy-ping/react-native`: `useNotifications` wired to `AppState`, a live stream when you pass `fetch` from `expo/fetch`, polling otherwise, and `registerMobilePushDevice` for native push.
 
 ### 7. Wire the cron
 

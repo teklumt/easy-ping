@@ -1,21 +1,28 @@
 {
   "name": "example-next-drizzle",
   "private": true,
-  "version": "0.0.6",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "dev": "next dev --port 3004",
+    "db:push": "drizzle-kit push",
+    "db:seed": "node --env-file=.env scripts/seed.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
-    "easy-ping": "workspace:*",
-    "next": "^15.5.25",
+    "easy-ping": "^0.10.2",
+    "next": "^16.4.2",
     "postgres": "^3.4.9",
-    "react": "^19.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
+    "@types/node": "^26.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^5.7.0"
   }
 }
