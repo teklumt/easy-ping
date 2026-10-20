@@ -80,6 +80,9 @@ const ROWS: readonly Row[] = [
 export function Comparison() {
   return (
     <div className="cmp">
+      <p className="cmp-hint" aria-hidden="true">
+        Swipe to compare →
+      </p>
       <div className="tablewrap">
         <table className="cmp-table">
           <thead>
