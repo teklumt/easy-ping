@@ -1,0 +1,6 @@
+.next/
+next-env.d.ts
+# Written by `next dev` on every start.
+AGENTS.md
+# Generated on first start. Holds a private key.
+.vapid-keys.json

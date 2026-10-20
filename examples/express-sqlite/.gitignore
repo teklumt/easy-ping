@@ -1,0 +1,4 @@
+*.db
+*.db-*
+# Generated on first start. Holds a private key.
+.vapid-keys.json

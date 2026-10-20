@@ -1,25 +1,30 @@
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { notify } from "../../../notify";
 import { getSession } from "../../../session";
+
+const Body = z.object({ threadOwnerId: z.string().min(1).max(40) });
 
 export async function POST(request: Request) {
   const session = await getSession(request);
   if (!session) return new Response(null, { status: 401 });
 
-  const { commentId, threadOwnerId } = (await request.json()) as {
-    commentId: string;
-    threadOwnerId: string;
-  };
+  const body = Body.safeParse(await request.json().catch(() => null));
+  if (!body.success) return Response.json({ error: "threadOwnerId is required" }, { status: 400 });
 
-  // Returns as soon as the rows are committed — it does not wait for Resend.
-  // The payload is typed against the zod schema in notify.ts; a typo here is
-  // a compile error, not a runtime surprise.
-  await notify.send("commentReply", {
+  // Stands in for the comment your app just saved.
+  const commentId = randomUUID();
+  const { threadOwnerId } = body.data;
+
+  // Returns as soon as the rows are committed; it does not wait for Resend.
+  // The payload is typed against the zod schema in notify.ts, so a typo is a compile error.
+  const result = await notify.send("commentReply", {
     to: threadOwnerId,
-    payload: { authorName: "Dana", commentId },
+    payload: { authorName: session.userId, commentId },
     actorId: session.userId,
-    // Safe to call twice — a retried request will not double-notify.
+    // Safe to call twice: a retried request will not double-notify.
     dedupeKey: `commentReply:${commentId}:${threadOwnerId}`,
   });
 
-  return Response.json({ ok: true });
+  return Response.json(result);
 }
