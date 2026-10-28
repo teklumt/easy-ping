@@ -760,6 +760,35 @@ footer.site a {
   color: var(--sent);
   border-color: var(--sent);
 }
+/* The page's main action: pasting this is what stops an AI inventing the API. */
+.tool-ai {
+  padding: 7px 14px;
+  border-color: var(--accent);
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+.tool-ai:hover {
+  border-color: var(--accent-ink);
+  box-shadow: 0 4px 14px -6px var(--accent);
+  transform: translateY(-1px);
+}
+.tool-ai[data-done="true"] {
+  background: var(--sent-wash);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-ai,
+  .tool-ai:hover {
+    transition: none;
+    transform: none;
+  }
+}
 
 .doc h1 {
   font-size: clamp(1.9rem, 4vw, 2.5rem);

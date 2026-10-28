@@ -1,3 +1,4 @@
+import { Check, Sparkles } from "lucide-react";
 import { useCopy } from "../lib/clipboard";
 import { API_CONTEXT } from "../lib/prompts";
 
@@ -24,8 +25,19 @@ export function DocTools({ slug }: { slug: string }) {
           Edit this page
         </a>
       )}
-      <button type="button" className="tool" data-done={copied} onClick={() => copy(API_CONTEXT)}>
-        {copied ? "Copied" : "Copy AI context"}
+      <button
+        type="button"
+        className="tool tool-ai"
+        data-done={copied}
+        title="Paste it into ChatGPT, Claude or Cursor before you ask, so the AI uses the real API"
+        onClick={() => copy(API_CONTEXT)}
+      >
+        {copied ? (
+          <Check size={14} aria-hidden="true" />
+        ) : (
+          <Sparkles size={14} aria-hidden="true" />
+        )}
+        {copied ? "Copied. Paste it into your AI" : "Copy AI context"}
       </button>
     </div>
   );
