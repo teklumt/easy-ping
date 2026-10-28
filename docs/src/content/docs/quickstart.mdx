@@ -72,6 +72,8 @@ becomes an email address.
 export const notify = easyPing({
   database: drizzleAdapter(db),
   secret: process.env.NOTIFY_SECRET!,
+  // Guards the cron route in step 6. The default delivery mode relies on it, so this is required.
+  cron: { secret: process.env.NOTIFY_CRON_SECRET! },
 
   // Required. These endpoints serve a user's private inbox.
   session: {
