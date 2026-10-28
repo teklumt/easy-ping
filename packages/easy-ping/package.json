@@ -211,7 +211,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.4",
     "http_ece": "^1.2.1",
     "mongodb": "^7.7.0",
     "mysql2": "^3.24.6",
