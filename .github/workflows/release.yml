@@ -32,7 +32,8 @@ jobs:
           # pnpm 11 requires >= 22.13 (it loads node:sqlite); trusted publishing
           # needs >= 22.14, which the 22 line satisfies.
           node-version: 22
-          cache: pnpm
+          # No dependency cache in the job that publishes: a poisoned cache entry would ship to npm.
+          package-manager-cache: false
           # No `registry-url`. It makes setup-node write an .npmrc containing
           # `_authToken=${NODE_AUTH_TOKEN}` and set NODE_AUTH_TOKEN to its dummy
           # placeholder, so pnpm sends that garbage as a bearer token and never

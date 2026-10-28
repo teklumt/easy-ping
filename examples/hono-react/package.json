@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
-    "easy-ping": "^0.10.2",
+    "easy-ping": "^0.10.3",
     "hono": "^4.13.14",
     "postgres": "^3.4.9",
     "react": "^19.3.1",

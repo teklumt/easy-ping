@@ -9,6 +9,11 @@ allowBuilds:
 
 auditConfig: {}
 
+# pnpm holds back versions published less than a day ago. The examples install our own release
+# straight after it ships, so easy-ping is exempt; everything else still waits.
+minimumReleaseAgeExclude:
+  - easy-ping
+
 # Next pins an old postcss with four open advisories (map-file disclosure). 8.5.x is API-compatible.
 overrides:
   "postcss@<8.5.23": ">=8.5.23"
