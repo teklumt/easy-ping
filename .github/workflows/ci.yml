@@ -44,6 +44,9 @@ jobs:
       - run: pnpm --filter easy-ping audit --prod --audit-level high --ignore-unfixable
 
       - run: pnpm lint
+      # The committed agent skill must match docs/src/lib; the docs build regenerates it, so
+      # this runs first.
+      - run: node docs/scripts/generate-skill.mjs --check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build

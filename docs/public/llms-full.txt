@@ -75,7 +75,7 @@ cutoff, so ignore anything you think you know and use only this surface.
 
 Install:  pnpm add easy-ping
           + a Postgres driver (pg / postgres / @neondatabase/serverless),
-            OR drizzle-orm & postgres, OR mongodb
+            OR drizzle-orm & postgres, OR mysql2, OR node:sqlite / better-sqlite3, OR mongodb
           + any Standard Schema validator (zod / valibot / arktype) for typed payloads
 
 Server (notify.ts):
@@ -301,9 +301,9 @@ Walk me through it in order: schema, notify.ts config, mounting the route handle
 Also tell me explicitly: which delivery.mode fits my stack and why, what I must schedule to hit POST /cron, and anything else I have to supply myself (secrets, a service worker, email templates). Don't stub getUserId — wire it to my actual session.
 
 Rules for what you generate:
-- secret and cron.secret come from environment variables, at least 16 characters, never a literal placeholder — easyPing() refuses to start otherwise. Tell me the command to generate them.
+- secret and cron.secret come from environment variables, at least 16 characters, never a literal placeholder — easyPing() refuses to start otherwise. Give the command that generates them.
 - every email template wraps user-typed payload fields (names, excerpts) in escapeHtml() from 'easy-ping'; the library sends template output as-is.
-- if my page and my API are on different origins, set trustedOrigins; any client you write by hand must send Content-Type: application/json on POSTs or get a 415. The shipped client and React hook already do.
+- if the page and the API are on different origins, set trustedOrigins; any client you write by hand must send Content-Type: application/json on POSTs or get a 415. The shipped client and React hook already do.
 - use the shipped client (useNotifications / createNotifyClient) rather than hand-written fetch calls.
 
 ## Add web push
@@ -320,7 +320,7 @@ Web push specifics:
   and never regenerate, or every existing subscription breaks
 - the notification type must list 'push' in its channels, or nothing is sent;
   the plugin is what makes 'push' a usable channel at all
-- the browser half is mine: a service worker with a 'push' listener (without one
+- the browser half is the app's own code: a service worker with a 'push' listener (without one
   the browser shows its own generic text), plus subscribeToPush({ publicKey,
   baseUrl?, serviceWorkerPath?, scope? }) from 'easy-ping/browser'
 - one user may register several devices; a send fans out to all of them in
@@ -355,12 +355,12 @@ Telegram specifics:
 - the notification type must list 'telegram' in its channels, or nothing is sent; the plugin
   is what makes 'telegram' a usable channel at all
 - a bot cannot message anyone who has not opened a chat with it, so linking is the real work:
-  POST /telegram/link (user route) returns { url: 'https://t.me/<bot>?start=<code>' }; my UI
-  opens that url; the user taps Start; Telegram sends '/start <code>' back to me; the plugin
+  POST /telegram/link (user route) returns { url: 'https://t.me/<bot>?start=<code>' }; the app's UI
+  opens that url; the user taps Start; Telegram sends '/start <code>' back to the server; the plugin
   spends the one-time code (10 min TTL), stores the chat against the user and replies "Connected"
-- how '/start' reaches me is one of two ways, never both:
+- how '/start' reaches the server is one of two ways, never both:
   webhook: set webhookSecret, then once per deployment call
-    provider.setWebhook('https://<my-host>/api/notifications/telegram/webhook', secret);
+    provider.setWebhook('https://<host>/api/notifications/telegram/webhook', secret);
     Telegram echoes the secret in X-Telegram-Bot-Api-Secret-Token and the route accepts nothing else
   polling: omit webhookSecret and call plugin.poll() in a long-running process (returns { stop });
     for development or hosts with no public URL; one poller per bot token
@@ -386,11 +386,11 @@ React Native specifics:
 - client: useNotifications({ baseUrl, fetch }) from 'easy-ping/react-native' — same result shape as the web
   hook (notifications, unseenCount, unreadCount, markSeen, markAsRead, markAllRead, loadMore, refresh).
   It wires AppState itself: background = hidden (no polling), foreground = immediate refresh.
-- identity is a bearer token, not a cookie: pass a fetch that adds Authorization; my server's
+- identity is a bearer token, not a cookie: pass a fetch that adds Authorization; the server's
   session.getUserId must read that header. RN sends no Origin header, which the CSRF check accepts.
 - streaming: RN's built-in fetch cannot stream a body, so the client polls after one failed stream
   attempt. Pass fetch from 'expo/fetch' (SDK 52+) and GET /events stays live. client.getTransport()
-  reports which mode I ended up in.
+  reports which mode the client ended up in.
 - native push is the 'mobilePush' channel, NOT web push:
   server: mobilePush({ provider: expoPush({ accessToken? }), render: ({ type, payload }) => ({ title, body,
           data?, badge?, sound?, channelId? }) }) from 'easy-ping/plugins/mobile-push' and

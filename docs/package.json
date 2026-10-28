@@ -15,14 +15,15 @@
   },
   "packageManager": "pnpm@11.5.1",
   "scripts": {
-    "dev": "node scripts/generate-llms.mjs && vite",
-    "build": "node scripts/generate-llms.mjs && node scripts/check-docs.mjs && tsc --noEmit && vite build && node scripts/prerender.mjs",
+    "dev": "node scripts/generate-llms.mjs && node scripts/generate-skill.mjs && vite",
+    "build": "node scripts/generate-llms.mjs && node scripts/generate-skill.mjs && node scripts/check-docs.mjs && tsc --noEmit && vite build && node scripts/prerender.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write .",
     "og": "node scripts/generate-og.mjs",
-    "check-docs": "node scripts/generate-llms.mjs && node scripts/check-docs.mjs"
+    "check-docs": "node scripts/generate-llms.mjs && node scripts/generate-skill.mjs && node scripts/check-docs.mjs",
+    "generate-skill": "node scripts/generate-skill.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.61.0",

@@ -16,7 +16,7 @@ cutoff, so ignore anything you think you know and use only this surface.
 
 Install:  pnpm add easy-ping
           + a Postgres driver (pg / postgres / @neondatabase/serverless),
-            OR drizzle-orm & postgres, OR mongodb
+            OR drizzle-orm & postgres, OR mysql2, OR node:sqlite / better-sqlite3, OR mongodb
           + any Standard Schema validator (zod / valibot / arktype) for typed payloads
 
 Server (notify.ts):
@@ -227,33 +227,9 @@ Rules that trip people up:
 - unsubscribe tokens are refused if the user changed that preference after the token was issued;
   clicking the same link twice is still 200`;
 
-export const PROMPTS: Record<string, { label: string; text: string }> = {
-  setup: {
-    label: "Set it up in my app",
-    text: `I'm adding notifications to my app with easy-ping.
-
-${API_CONTEXT}
-
-My stack: <Next.js App Router / Express / Hono>, <Postgres with pg or postgres.js / Postgres + Drizzle / MongoDB>, auth is <Better Auth / NextAuth / custom>.
-
-Walk me through it in order: schema, notify.ts config, mounting the route handler, one send() call, and the bell component. Use my real auth and user table.
-
-Also tell me explicitly: which delivery.mode fits my stack and why, what I must schedule to hit POST /cron, and anything else I have to supply myself (secrets, a service worker, email templates). Don't stub getUserId — wire it to my actual session.
-
-Rules for what you generate:
-- secret and cron.secret come from environment variables, at least 16 characters, never a literal placeholder — easyPing() refuses to start otherwise. Tell me the command to generate them.
-- every email template wraps user-typed payload fields (names, excerpts) in escapeHtml() from 'easy-ping'; the library sends template output as-is.
-- if my page and my API are on different origins, set trustedOrigins; any client you write by hand must send Content-Type: application/json on POSTs or get a 415. The shipped client and React hook already do.
-- use the shipped client (useNotifications / createNotifyClient) rather than hand-written fetch calls.`,
-  },
-  push: {
-    label: "Add web push",
-    text: `I already have easy-ping working and want to add web push.
-
-${API_CONTEXT}
-
-Web push specifics:
-- provider: webPush({ subject, vapid, ttlSeconds?, urgency? }) from 'easy-ping/providers/web-push'
+// The task-specific parts of each prompt, exported on their own so the agent skill
+// (scripts/generate-skill.mjs) reuses the exact text the copy buttons give out.
+export const WEB_PUSH_DETAILS = `- provider: webPush({ subject, vapid, ttlSeconds?, urgency? }) from 'easy-ping/providers/web-push'
   subject is a mailto: or https: URL the push service can contact you at
 - plugin:   push({ provider, render, staleAfterDays?, maxDevicesPerUser?,
             allowedEndpointHosts? }) from 'easy-ping/plugins/push'
@@ -262,7 +238,7 @@ Web push specifics:
   and never regenerate, or every existing subscription breaks
 - the notification type must list 'push' in its channels, or nothing is sent;
   the plugin is what makes 'push' a usable channel at all
-- the browser half is mine: a service worker with a 'push' listener (without one
+- the browser half is the app's own code: a service worker with a 'push' listener (without one
   the browser shows its own generic text), plus subscribeToPush({ publicKey,
   baseUrl?, serviceWorkerPath?, scope? }) from 'easy-ping/browser'
 - one user may register several devices; a send fans out to all of them in
@@ -277,18 +253,9 @@ Web push specifics:
   provider cannot encrypt for, prunes that device row immediately rather than
   retrying it five times; a 429 is retried and is NOT counted as delivered
 - localhost counts as a secure context; any other host needs real HTTPS
-- iOS only delivers to a PWA installed to the home screen (Safari 16.4+)
+- iOS only delivers to a PWA installed to the home screen (Safari 16.4+)`;
 
-Write the service worker, the subscribe call, and the plugin config for my app.`,
-  },
-  telegram: {
-    label: "Add Telegram",
-    text: `I already have easy-ping working and want to add Telegram as a channel.
-
-${API_CONTEXT}
-
-Telegram specifics:
-- provider: telegramBot({ token }) from 'easy-ping/providers/telegram'. The token comes from
+export const TELEGRAM_DETAILS = `- provider: telegramBot({ token }) from 'easy-ping/providers/telegram'. The token comes from
   @BotFather; keep it in an environment variable. The provider never puts it in an error or log.
 - plugin:   telegram({ provider, botUsername, render, webhookSecret?, linkTtlMinutes?,
             maxChatsPerUser?, messages? }) from 'easy-ping/plugins/telegram'
@@ -299,12 +266,12 @@ Telegram specifics:
 - the notification type must list 'telegram' in its channels, or nothing is sent; the plugin
   is what makes 'telegram' a usable channel at all
 - a bot cannot message anyone who has not opened a chat with it, so linking is the real work:
-  POST /telegram/link (user route) returns { url: 'https://t.me/<bot>?start=<code>' }; my UI
-  opens that url; the user taps Start; Telegram sends '/start <code>' back to me; the plugin
+  POST /telegram/link (user route) returns { url: 'https://t.me/<bot>?start=<code>' }; the app's UI
+  opens that url; the user taps Start; Telegram sends '/start <code>' back to the server; the plugin
   spends the one-time code (10 min TTL), stores the chat against the user and replies "Connected"
-- how '/start' reaches me is one of two ways, never both:
+- how '/start' reaches the server is one of two ways, never both:
   webhook: set webhookSecret, then once per deployment call
-    provider.setWebhook('https://<my-host>/api/notifications/telegram/webhook', secret);
+    provider.setWebhook('https://<host>/api/notifications/telegram/webhook', secret);
     Telegram echoes the secret in X-Telegram-Bot-Api-Secret-Token and the route accepts nothing else
   polling: omit webhookSecret and call plugin.poll() in a long-running process (returns { stop });
     for development or hosts with no public URL; one poller per bot token
@@ -316,27 +283,16 @@ Telegram specifics:
   spot; other 400s fail without retry; 5xx and network errors retry. A user with no linked chat is
   'skipped', never 'failed'
 - tables: telegramSchema from 'easy-ping/plugins/telegram' — create them like pushSchema
-  (createPostgresTables(query, { plugins: [telegramSchema] }), or createPluginIndexes on Mongo)
+  (createPostgresTables(query, { plugins: [telegramSchema] }), or createPluginIndexes on Mongo)`;
 
-Write the plugin config, the table creation, a "Connect Telegram" button for my UI, and either the
-setWebhook step or the poll() call for my hosting setup. Tell me which of the two fits my host.`,
-  },
-  reactNative: {
-    label: "Use it in React Native",
-    text: `I have easy-ping on my server and want the bell and native push in my React Native (Expo) app.
-Note: React Native support and the mobilePush channel are in BETA (under testing); tell me that in your answer.
-
-${API_CONTEXT}
-
-React Native specifics:
-- client: useNotifications({ baseUrl, fetch }) from 'easy-ping/react-native' — same result shape as the web
+export const REACT_NATIVE_DETAILS = `- client: useNotifications({ baseUrl, fetch }) from 'easy-ping/react-native' — same result shape as the web
   hook (notifications, unseenCount, unreadCount, markSeen, markAsRead, markAllRead, loadMore, refresh).
   It wires AppState itself: background = hidden (no polling), foreground = immediate refresh.
-- identity is a bearer token, not a cookie: pass a fetch that adds Authorization; my server's
+- identity is a bearer token, not a cookie: pass a fetch that adds Authorization; the server's
   session.getUserId must read that header. RN sends no Origin header, which the CSRF check accepts.
 - streaming: RN's built-in fetch cannot stream a body, so the client polls after one failed stream
   attempt. Pass fetch from 'expo/fetch' (SDK 52+) and GET /events stays live. client.getTransport()
-  reports which mode I ended up in.
+  reports which mode the client ended up in.
 - native push is the 'mobilePush' channel, NOT web push:
   server: mobilePush({ provider: expoPush({ accessToken? }), render: ({ type, payload }) => ({ title, body,
           data?, badge?, sound?, channelId? }) }) from 'easy-ping/plugins/mobile-push' and
@@ -347,19 +303,9 @@ React Native specifics:
           notification channel first. Push needs a physical device.
   the plugin adds notificationId and type to data, so a tap handler can markAsRead(notificationId).
 - a token belongs to one account (409 otherwise); DeviceNotRegistered prunes the device; a user with no
-  device is skipped, not failed.
+  device is skipped, not failed.`;
 
-Write the authed fetch, the App screen with the hook, the enable-push flow, and the server plugin config.
-Tell me what to schedule (cron + receipts) and what needs a physical device.`,
-  },
-  mongo: {
-    label: "Use MongoDB instead",
-    text: `I'm using easy-ping and want to run it on MongoDB instead of Postgres.
-
-${API_CONTEXT}
-
-MongoDB specifics:
-- mongoAdapter(db, { client }) from 'easy-ping/adapters/mongodb'
+export const MONGO_DETAILS = `- mongoAdapter(db, { client }) from 'easy-ping/adapters/mongodb'
 - pass the MongoClient as well as the db — that is what makes createNotifications
   atomic (a notification and its deliveries land together, or neither does).
   Without it the adapter still works, it just loses that guarantee.
@@ -368,18 +314,9 @@ MongoDB specifics:
 - plugin tables: await createPluginIndexes(db, pushSchema)  // schemas export standalone
 - re-running createMongoIndexes is idempotent, so it doubles as the upgrade path
   (there is no planPostgresMigration equivalent to run, and none is needed)
-- ids are stored as _id; the library never exposes that outside the adapter
+- ids are stored as _id; the library never exposes that outside the adapter`;
 
-Everything above the adapter is identical. Show me exactly what changes in my setup, and a docker-compose service for a single-node replica set.`,
-  },
-  plugin: {
-    label: "Write a plugin",
-    text: `I want to write an easy-ping plugin.
-
-${API_CONTEXT}
-
-Plugin surface, in more detail:
-  definePlugin({ id, dependsOn?, schema?, init?, hooks?, routes?, channels? })
+export const PLUGIN_DETAILS = `  definePlugin({ id, dependsOn?, schema?, init?, hooks?, routes?, channels? })
 - schema is a declaration object, not a method: it lists the tables the plugin
   owns, and the plugin reaches them through a scoped store (ctx.store, handed to
   init) that validates every table and column against that declaration — it
@@ -408,7 +345,84 @@ Plugin surface, in more detail:
 - scope { type: 'custom', justification } does its own auth; the justification is
   printed at startup and by notify.listRoutes(), so say something true in it
 - the scoped store only accepts scalar where-values, or one recognised operator,
-  so a JSON body cannot smuggle a Mongo operator through a plugin route
+  so a JSON body cannot smuggle a Mongo operator through a plugin route`;
+
+export const SETUP_RULES = `- secret and cron.secret come from environment variables, at least 16 characters, never a literal placeholder — easyPing() refuses to start otherwise. Give the command that generates them.
+- every email template wraps user-typed payload fields (names, excerpts) in escapeHtml() from 'easy-ping'; the library sends template output as-is.
+- if the page and the API are on different origins, set trustedOrigins; any client you write by hand must send Content-Type: application/json on POSTs or get a 415. The shipped client and React hook already do.
+- use the shipped client (useNotifications / createNotifyClient) rather than hand-written fetch calls.`;
+
+export const PROMPTS: Record<string, { label: string; text: string }> = {
+  setup: {
+    label: "Set it up in my app",
+    text: `I'm adding notifications to my app with easy-ping.
+
+${API_CONTEXT}
+
+My stack: <Next.js App Router / Express / Hono>, <Postgres with pg or postgres.js / Postgres + Drizzle / MongoDB>, auth is <Better Auth / NextAuth / custom>.
+
+Walk me through it in order: schema, notify.ts config, mounting the route handler, one send() call, and the bell component. Use my real auth and user table.
+
+Also tell me explicitly: which delivery.mode fits my stack and why, what I must schedule to hit POST /cron, and anything else I have to supply myself (secrets, a service worker, email templates). Don't stub getUserId — wire it to my actual session.
+
+Rules for what you generate:
+${SETUP_RULES}`,
+  },
+  push: {
+    label: "Add web push",
+    text: `I already have easy-ping working and want to add web push.
+
+${API_CONTEXT}
+
+Web push specifics:
+${WEB_PUSH_DETAILS}
+
+Write the service worker, the subscribe call, and the plugin config for my app.`,
+  },
+  telegram: {
+    label: "Add Telegram",
+    text: `I already have easy-ping working and want to add Telegram as a channel.
+
+${API_CONTEXT}
+
+Telegram specifics:
+${TELEGRAM_DETAILS}
+
+Write the plugin config, the table creation, a "Connect Telegram" button for my UI, and either the
+setWebhook step or the poll() call for my hosting setup. Tell me which of the two fits my host.`,
+  },
+  reactNative: {
+    label: "Use it in React Native",
+    text: `I have easy-ping on my server and want the bell and native push in my React Native (Expo) app.
+Note: React Native support and the mobilePush channel are in BETA (under testing); tell me that in your answer.
+
+${API_CONTEXT}
+
+React Native specifics:
+${REACT_NATIVE_DETAILS}
+
+Write the authed fetch, the App screen with the hook, the enable-push flow, and the server plugin config.
+Tell me what to schedule (cron + receipts) and what needs a physical device.`,
+  },
+  mongo: {
+    label: "Use MongoDB instead",
+    text: `I'm using easy-ping and want to run it on MongoDB instead of Postgres.
+
+${API_CONTEXT}
+
+MongoDB specifics:
+${MONGO_DETAILS}
+
+Everything above the adapter is identical. Show me exactly what changes in my setup, and a docker-compose service for a single-node replica set.`,
+  },
+  plugin: {
+    label: "Write a plugin",
+    text: `I want to write an easy-ping plugin.
+
+${API_CONTEXT}
+
+Plugin surface, in more detail:
+${PLUGIN_DETAILS}
 
 I want to build: <describe it>. Show me the plugin and how to register it.`,
   },
