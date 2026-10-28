@@ -466,6 +466,8 @@ Defaults to the last 24 hours, capped at 1000 rows. Wire it to an admin page or 
 
 ## Security notes
 
+Found a vulnerability? Report it privately; see [SECURITY.md](https://github.com/teklumt/easy-ping/blob/main/SECURITY.md).
+
 - **`session.getUserId` is mandatory.** There is no default and no dev bypass — an insecure default ships, a startup crash doesn't. Returning `null` yields 401; *throwing* yields 500, because a broken session store and an absent session are different bugs.
 - **Every query is scoped server-side.** No route accepts a user id from the client. Marking someone else's notification read returns 404, not 403 — a 403 confirms the row exists.
 - **`cron.secret` is required** for modes that rely on the sweep. Unauthenticated, that endpoint is a free flush-everything trigger against your email provider. Compared in constant time. Plugin machine routes (`/push/prune`, `/digests/cron`) accept it too unless you set `machineSecret`, which keeps the scheduler's credential to `/cron` alone. One call drains at most `cron.maxSweeps` sweeps (default 50).

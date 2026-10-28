@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest a channel, adapter, option or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you are trying to solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like easy-ping to do
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do today instead

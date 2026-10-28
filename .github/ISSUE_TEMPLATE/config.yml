@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: "Questions and help → Discord"
     url: https://discord.gg/bJ5wGFD3H
     about: Ask how to use easy-ping, or get help with your setup. Bugs and feature requests belong in a GitHub issue.
+  - name: "Report a security vulnerability"
+    url: https://github.com/teklumt/easy-ping/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
