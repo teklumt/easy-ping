@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in easy-ping does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: For a security problem, do not open an issue; see SECURITY.md. For setup help, ask on Discord.
+  - type: input
+    id: version
+    attributes:
+      label: easy-ping version
+      placeholder: "0.10.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database adapter
+      options: [Postgres, Drizzle, MySQL, SQLite, MongoDB, Other or not relevant]
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and framework
+      placeholder: "Node 22, Next.js 16"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Smallest code that shows it
+      render: ts
+    validations:
+      required: true

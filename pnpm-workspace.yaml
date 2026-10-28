@@ -21,3 +21,7 @@ overrides:
   source-map-js: ">=1.2.2"
   # next's optional sharp has a librsvg advisory; the example never runs it, but audit still sees it.
   sharp: ">=0.35.5"
+  # @changesets/cli pins a launch-editor with Windows command-injection advisories.
+  launch-editor: ">=2.14.2"
+  # express 5.3 allows body-parser 2.3, which has a compressed-body DoS advisory.
+  body-parser: ">=2.4.0"

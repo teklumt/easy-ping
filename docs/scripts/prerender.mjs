@@ -7,6 +7,7 @@
 // prerendered and missing from the sitemap, or the other way round.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -78,6 +79,22 @@ ${routes
 </urlset>
 `;
 await writeFile(join(dist, "sitemap.xml"), sitemap);
+
+// The CSP allows inline scripts by hash only, so the hashes come from the pages as built.
+const hashes = new Set();
+for (const route of [...routes.map((r) => r.path), "/__not_found__"]) {
+  for (const [, attrs, body] of page(route).matchAll(
+    /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g,
+  )) {
+    if (attrs.includes("application/ld+json")) continue;
+    hashes.add(`'sha256-${createHash("sha256").update(body).digest("base64")}'`);
+  }
+}
+const headersFile = join(dist, "_headers");
+const headers = await readFile(headersFile, "utf8");
+if (!headers.includes("CSP_SCRIPT_HASHES"))
+  throw new Error("public/_headers lost its CSP_SCRIPT_HASHES marker");
+await writeFile(headersFile, headers.replace("CSP_SCRIPT_HASHES", [...hashes].join(" ")));
 
 await rm(ssrOut, { recursive: true, force: true });
 console.log(`prerendered ${routes.length} routes + 404.html, wrote sitemap.xml`);

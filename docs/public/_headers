@@ -1,3 +1,12 @@
+# scripts/prerender.mjs fills the script-src hashes from the inline scripts in the built pages.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' CSP_SCRIPT_HASHES; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+
 /llms.txt
   Content-Type: text/plain; charset=utf-8
 

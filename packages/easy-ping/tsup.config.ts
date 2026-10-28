@@ -8,7 +8,7 @@ const shared = {
   target: "node20" as const,
   dts: true,
   treeshake: true,
-  sourcemap: true,
+  sourcemap: false,
 };
 
 export default defineConfig([
