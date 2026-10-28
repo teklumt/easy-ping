@@ -1,5 +1,11 @@
 # easy-ping
 
+## 0.10.3
+
+### Patch Changes
+
+- [#39](https://github.com/teklumt/easy-ping/pull/39) [`a87f118`](https://github.com/teklumt/easy-ping/commit/a87f1186f31be3bd4a6629f849828e0e8a47397e) Thanks [@teklumt](https://github.com/teklumt)! - Stop shipping source maps. The build is not minified, so stack traces already point at readable code; the maps were two thirds of the unpacked size (2.7 MB down to about 0.9 MB).
+
 ## 0.10.2
 
 ### Patch Changes
