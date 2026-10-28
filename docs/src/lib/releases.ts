@@ -33,11 +33,26 @@ export type Release = {
 
 export const RELEASES: readonly Release[] = [
   {
+    version: "0.10.3",
+    date: "2026-10-28",
+    summary: "A third of the download size: the package no longer ships source maps.",
+    current: true,
+    changes: [
+      {
+        kind: "changed",
+        title: "No more source maps in the package",
+        detail:
+          "The build is not minified, so stack traces already point at readable code. The maps " +
+          "were two thirds of the package: unpacked size drops from 2.7 MB to 0.9 MB, and the " +
+          "download from 617 KB to 212 KB.",
+      },
+    ],
+  },
+  {
     version: "0.10.2",
     date: "2026-10-07",
     summary:
       "Package metadata now says what it is: free and open-source, with every channel and database it supports listed up front.",
-    current: true,
     changes: [
       {
         kind: "changed",
