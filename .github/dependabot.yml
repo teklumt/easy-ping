@@ -11,5 +11,14 @@ updates:
       interval: weekly
     open-pull-requests-limit: 15
     groups:
+      # react and react-dom refuse to run at different versions, so they only move together.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      # Majors stay out of the groups and arrive one per PR, so one breaking change cannot
+      # block every routine update.
       dev-dependencies:
         dependency-type: development
+        update-types: ["minor", "patch"]
+      dependencies:
+        dependency-type: production
+        update-types: ["minor", "patch"]
