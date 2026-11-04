@@ -1,6 +1,7 @@
 # scripts/prerender.mjs fills the script-src hashes from the inline scripts in the built pages.
+# The cloudflareinsights hosts are Cloudflare Web Analytics: its injected beacon and where it reports.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' CSP_SCRIPT_HASHES; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com CSP_SCRIPT_HASHES; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
   Strict-Transport-Security: max-age=31536000
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
